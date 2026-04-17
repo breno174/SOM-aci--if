@@ -1,7 +1,7 @@
 import numpy as np
 import json
 import os
-from helper.node import Node
+from src.helper.node import Node
 
 class SOM:
     """

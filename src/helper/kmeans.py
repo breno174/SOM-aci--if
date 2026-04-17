@@ -1,5 +1,49 @@
 import numpy as np
 
+class SimpleKMeans:
+
+    def __init__(self, k=3, epochs=50):
+
+        self.k = k
+        self.epochs = epochs
+        self.centroids = []
+
+    def _distance(self, a, b):
+        soma = 0
+        for i in range(len(a)):
+            soma += (a[i] - b[i]) ** 2
+        return math.sqrt(soma)
+
+    def fit(self, data):
+        self.centroids = random.sample(data, self.k)
+        for epoch in range(self.epochs):
+            clusters = [[] for _ in range(self.k)]
+            # atribuir pontos
+            for point in data:
+                min_dist = float("inf")
+                idx = 0
+                for i, centroid in enumerate(self.centroids):
+                    d = self._distance(point, centroid)
+                    if d < min_dist:
+                        min_dist = d
+                        idx = i
+                clusters[idx].append(point)
+            # atualizar centroides
+            new_centroids = []
+            for cluster in clusters:
+                if len(cluster) == 0:
+                    new_centroids.append(random.choice(data))
+                    continue
+                mean = [0] * len(cluster[0])
+                for point in cluster:
+                    for j in range(len(point)):
+                        mean[j] += point[j]
+                for j in range(len(mean)):
+                    mean[j] /= len(cluster)
+                new_centroids.append(mean)
+            self.centroids = new_centroids
+        return clusters
+
 class KMeans:
     """
     Implementação do algoritmo K-Means para agrupamento de dados.

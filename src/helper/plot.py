@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 
 # ─────────────────────────── Funções de Plotagem ───────────────────────────
 
+SAVE_DIR = "src/picture"
+
 def plot_progression(history, data, som, indices_to_plot, dim0=0, dim1=5, xlabel="Horas em Redes Sociais (norm.)", ylabel="Nível de Stress (norm.)"):
     """Plota a progressão dos neurônios época a época."""
     num_plots = len(indices_to_plot)
@@ -68,7 +70,7 @@ def plot_progression(history, data, som, indices_to_plot, dim0=0, dim1=5, xlabel
 
     fig.suptitle("Evolução da SOM – Teen Mental Health (Progresso por Épocas)", fontsize=15, fontweight='bold', y=1.02)
     plt.tight_layout()
-    plt.savefig("src/pictures/mental_progression_epochs.png", dpi=120, bbox_inches='tight')
+    plt.savefig("{SAVE_DIR}/mental_progression_epochs.png", dpi=120, bbox_inches='tight')
     print("  -> Grafico de progressao salvo: src/mental_progression_epochs.png")
     plt.show()
 
@@ -114,7 +116,7 @@ def plot_cluster_grid(som, cluster_labels, true_labels, data, class_names, dim0=
         ax.legend(handles=legend_handles, loc='upper right', fontsize=8)
 
     plt.tight_layout()
-    plt.savefig("src/pictures/mental_cluster_grid.png", dpi=120, bbox_inches='tight')
+    plt.savefig("{SAVE_DIR}/mental_cluster_grid.png", dpi=120, bbox_inches='tight')
     print("  -> Mapa de grade salvo: src/mental_cluster_grid.png")
     plt.show()
 
@@ -207,6 +209,125 @@ def plot_final_clusters(som, data, kmeans, labels, true_labels, class_names, dim
     ax.grid(True, linestyle='--', alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig("src/pictures/clusters_finais.png", dpi=120, bbox_inches='tight')
-    print("  -> Grafico de clusters em 2D salvo: src/clusters_finais.png")
+    plt.savefig("{SAVE_DIR}/clusters_finais.png", dpi=120, bbox_inches='tight')
+    print("  -> Grafico de clusters em 2D salvo: {SAVE_DIR}/clusters_finais.png")
+    plt.show()
+
+
+def plot_kmeans_comparison(som, data, kmeans_data, kmeans_data_labels, kmeans_neurons, neuron_labels,
+                           true_labels, class_names, dim0=0, dim1=1,
+                           xlabel="Feature 0", ylabel="Feature 1"):
+    """
+    Plota lado a lado:
+      - (Esquerda) K-Means aplicado diretamente nos dados brutos
+      - (Direita)  K-Means aplicado nos neuronios da SOM (dados coloridos via BMU)
+    """
+    from collections import Counter
+
+    n_clusters = len(set(kmeans_data_labels))
+    cores = plt.get_cmap('Set1', n_clusters)
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    fig.suptitle("Comparacao K-Means: Dados Brutos  vs  Neuronios SOM",
+                 fontsize=14, fontweight='bold')
+
+    # ────────── Painel Esquerdo: K-Means nos dados brutos ──────────
+    ax_l = axes[0]
+    ax_l.set_title("K-Means nos Dados Brutos", fontweight='bold')
+
+    # Mapear cluster -> nome da classe dominante
+    cluster_to_class_data = {}
+    for c in range(n_clusters):
+        true_in_c = [true_labels[i] for i, k in enumerate(kmeans_data_labels) if k == c]
+        if true_in_c:
+            cluster_to_class_data[c] = class_names[Counter(true_in_c).most_common(1)[0][0]]
+        else:
+            cluster_to_class_data[c] = "Vazio"
+
+    for c in range(n_clusters):
+        mask = (np.array(kmeans_data_labels) == c)
+        name = cluster_to_class_data.get(c, "Vazio")
+        if np.any(mask):
+            ax_l.scatter(data[mask, dim0], data[mask, dim1],
+                         color=cores(c), s=20, alpha=0.6,
+                         label=f'{name} (Cluster {c+1})')
+
+    # Centroides dos dados
+    centroids_data = np.array(kmeans_data.centroids)
+    if centroids_data.shape[0] > 0:
+        ax_l.scatter(centroids_data[:, dim0], centroids_data[:, dim1],
+                     marker='X', s=200, c='black', zorder=6, label='Centroide')
+
+    ax_l.set_xlabel(xlabel)
+    ax_l.set_ylabel(ylabel)
+    ax_l.legend(loc='upper right', fontsize=8)
+    ax_l.grid(True, linestyle='--', alpha=0.3)
+
+    # ────────── Painel Direito: K-Means nos neuronios da SOM ──────────
+    ax_r = axes[1]
+    ax_r.set_title("K-Means nos Neuronios SOM", fontweight='bold')
+
+    snapshot_final = som.weights.copy()
+
+    # Atribuir cada amostra ao cluster do seu BMU
+    data_cluster_via_som = []
+    for x in data:
+        bmu_idx = som.find_bmu(x)
+        data_cluster_via_som.append(neuron_labels[bmu_idx])
+
+    # Mapear cluster -> nome da classe dominante (via neuronios)
+    cluster_to_class_neurons = {}
+    for c in range(n_clusters):
+        true_in_c = [true_labels[i] for i, k in enumerate(data_cluster_via_som) if k == c]
+        if true_in_c:
+            cluster_to_class_neurons[c] = class_names[Counter(true_in_c).most_common(1)[0][0]]
+        else:
+            cluster_to_class_neurons[c] = "Vazio"
+
+    # Dados de fundo coloridos pelo cluster do BMU
+    for c in range(n_clusters):
+        mask = (np.array(data_cluster_via_som) == c)
+        name = cluster_to_class_neurons.get(c, "Vazio")
+        if np.any(mask):
+            ax_r.scatter(data[mask, dim0], data[mask, dim1],
+                         color=cores(c), s=20, alpha=0.4,
+                         label=f'{name} (Cluster {c+1})')
+
+    # Topologia: linhas entre neuronios vizinhos
+    adjacency = []
+    for i_node, node in enumerate(som.nodes):
+        for neighbor in node.neighbors:
+            j_node = som.nodes.index(neighbor)
+            if i_node < j_node:
+                adjacency.append((i_node, j_node))
+
+    for (i_n, j_n) in adjacency:
+        ax_r.plot([snapshot_final[i_n, dim0], snapshot_final[j_n, dim0]],
+                  [snapshot_final[i_n, dim1], snapshot_final[j_n, dim1]],
+                  color='gray', linewidth=1.0, alpha=0.5)
+
+    # Neuronios coloridos por cluster
+    for c in range(n_clusters):
+        mask = (np.array(neuron_labels) == c)
+        name = cluster_to_class_neurons.get(c, "Vazio")
+        if np.any(mask):
+            ax_r.scatter(snapshot_final[mask, dim0], snapshot_final[mask, dim1],
+                         color=cores(c), s=120, zorder=5,
+                         edgecolors='black', linewidths=1.0, marker='s',
+                         label=f'Neuronios - {name}')
+
+    # Centroides dos neuronios
+    centroids_neurons = np.array(kmeans_neurons.centroids)
+    if centroids_neurons.shape[0] > 0:
+        ax_r.scatter(centroids_neurons[:, dim0], centroids_neurons[:, dim1],
+                     marker='X', s=200, c='black', zorder=6, label='Centroide')
+
+    ax_r.set_xlabel(xlabel)
+    ax_r.set_ylabel(ylabel)
+    ax_r.legend(loc='upper right', fontsize=8)
+    ax_r.grid(True, linestyle='--', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig("{SAVE_DIR}/kmeans_comparison.png", dpi=120, bbox_inches='tight')
+    print("  -> Comparacao K-Means salva: {SAVE_DIR}/kmeans_comparison.png")
     plt.show()

@@ -10,7 +10,7 @@ import pandas as pd
 from implement.som import SOM
 # from src.helper.kmeans import SimpleKMeans
 from implement.kmenasSimple import KMeans as SimpleKMeans
-from src.helper.plot import plot_progression, plot_cluster_grid, plot_final_clusters
+from src.helper.plot import plot_progression, plot_cluster_grid, plot_final_clusters, plot_kmeans_comparison
 
 # ── Configurações ──────────────────────────────────────────────────
 NUM_EPOCHS   = 100          # épocas de treinamento
@@ -111,36 +111,6 @@ def main():
 
     epocas = list(range(1, len(som.history_mse) + 1))
 
-    # # ── 6. Curvas de EQM e Acurácia ─────────────────────────────────
-    # print("[6/8] Plotando EQM e Acurácia...")
-
-    # fig, ax = plt.subplots(figsize=(10, 4))
-    # ax.plot(epocas, som.history_mse, color='crimson', linewidth=2, marker='o', markersize=3, label='EQM')
-    # ax.fill_between(epocas, som.history_mse, alpha=0.12, color='crimson')
-    # ax.set_title("Erro Quadrático Médio (EQM) por Época", fontsize=13, fontweight='bold')
-    # ax.set_xlabel("Época")
-    # ax.set_ylabel("EQM médio")
-    # ax.grid(True, linestyle='--', alpha=0.4)
-    # ax.legend()
-    # plt.tight_layout()
-    # plt.savefig(f"{SAVE_DIR}/iris_eqm.png", dpi=120, bbox_inches='tight')
-    # plt.show()
-
-    # if som.history_accuracy:
-    #     fig, ax = plt.subplots(figsize=(10, 4))
-    #     acc_pct = [a * 100 for a in som.history_accuracy]
-    #     ax.plot(epocas, acc_pct, color='steelblue', linewidth=2, marker='s', markersize=3, label='Acurácia (%)')
-    #     ax.fill_between(epocas, acc_pct, alpha=0.12, color='steelblue')
-    #     ax.set_title("Acurácia por Época", fontsize=13, fontweight='bold')
-    #     ax.set_xlabel("Época")
-    #     ax.set_ylabel("Acurácia (%)")
-    #     ax.set_ylim(0, 105)
-    #     ax.grid(True, linestyle='--', alpha=0.4)
-    #     ax.legend()
-    #     plt.tight_layout()
-    #     plt.savefig(f"{SAVE_DIR}/iris_accuracy.png", dpi=120, bbox_inches='tight')
-    #     plt.show()
-
     # ── 6. Decaimento do LR e Sigma ─────────────────────────────────
     print("[5/7] Plotando decaimento dos parâmetros...")
     fig, ax = plt.subplots(1, 2, figsize=(13, 4))
@@ -193,26 +163,27 @@ def main():
         plt.savefig(f"{SAVE_DIR}/iris_accuracy.png", dpi=120, bbox_inches='tight')
         plt.show()
 
-    # Gráfico da linha da acurancia
-
-    # ── 8. K-Means nos neurônios (VISUALIZAÇÃO) ──────────
+    # ── 7. K-Means nos neurônios ──────────────────────────
     print("[7/8] Clustering dos neurônios (visualização)...")
 
     kmeans_neurons = SimpleKMeans(k=N_CLUSTERS, random_state=42)
     neuron_centroids, neuron_labels = kmeans_neurons.fit(som.weights)
 
-    plot_final_clusters(
-        som,
-        data,
-        kmeans_neurons,
-        neuron_labels,
-        species_int,
-        species_names,
+    # ── 7b. Comparacao K-Means: dados brutos vs neuronios ──────────
+    print("[7b/8] Plotando comparacao K-Means (dados vs neuronios)...")
+    plot_kmeans_comparison(
+        som=som,
+        data=data,
+        kmeans_data=kmeans_data,
+        kmeans_data_labels=kmeans_labels,
+        kmeans_neurons=kmeans_neurons,
+        neuron_labels=neuron_labels,
+        true_labels=species_int,
+        class_names=species_names,
         dim0=dim0,
         dim1=dim1,
         xlabel=xlabel,
-        ylabel=ylabel,
-        title_prefix="Estado Final - Iris"
+        ylabel=ylabel
     )
 
     # ── 8. Grade de clusters e labels ───────────────────────────────

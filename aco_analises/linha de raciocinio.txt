@@ -1,0 +1,37 @@
+durante a normalização remover as colunas:
+Y -> cl_6, cl_11, cl_12,
+Y -> cl_22 número muito elevado, então deve ser desconsiderada
+Y -> cl_1 tem 3 amostras que possuem valores extremamente deslocados da média de dados.
+- ln_355, ln_350, ln_370.
+Para identificar esses dados será aplicado uma normalização matemática em que eu vou identificar os dados que possuem um valor maior que três em:
+z = x - u / £^2
+x = amostra
+u = média
+£ = desvio padrão
+se z > 3, então a amostra será desconsiderada
+
+Análise:
+Y -> cl_10 define claramente uma classificação das espécies.
+X -> a partir da linha 246 até 280 na cl_10 temos amostrar que são classificada como c3_p3 por conta dos seus valores extremamente baixos nessa coluna.
+Y -> cl_25 é a coluna de classificação das espécies.
+
+# ---- Atributos descritos no documento ----- #
+
+Atributos da região:
+- Comprimento: maior quantidade de pixels orientados horizontalmente em relação ao eixo do objeto.  
+- Largura: maior quantidade de pixels orientados perpendicularmente ao comprimento.  
+- Área: quantidade de pixels que fazem parte do objeto analisado.  
+- Área do retângulo mínimo: quantidade pixels que fazem parte do menor retângulo que contém o objeto.  
+- Excentricidade: é a relação entre o comprimento e a largura do objeto.  
+Essa relação pode ser expressa pela equação (24).
+Eq(24): Excentricidade = Comprimento / Largura
+
+
+Atributos da imagem:
+- Quantidade de Objetos: Corresponde ao número total de objetos identificados na imagem.  
+- Maior comprimento: maior comprimento dentre todos os objetos da imagem.  
+- Comprimento Médio: média aritmética do comprimento dos objetos em relação à quantidade de objetos da imagem.  
+- % de Continuidade: Corresponde ao valor percentual da somatória do comprimento dos objetos da imagem dividida pelo número total de colunas (comprimento) da imagem.  
+- Largura Média: média aritmética da largura dos objetos em relação à quantidade de objetos da imagem.  
+- Maior área: maior área dentre todos os objetos da imagem.
+

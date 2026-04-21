@@ -1,5 +1,6 @@
 import numpy as np
-
+import math
+import random
 class SimpleKMeans:
 
     def __init__(self, k=3, epochs=50):

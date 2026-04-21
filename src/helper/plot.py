@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 # ─────────────────────────── Funções de Plotagem ───────────────────────────
 
-def plot_progression(history, data, som, indices_to_plot):
+def plot_progression(history, data, som, indices_to_plot, dim0=0, dim1=5, xlabel="Horas em Redes Sociais (norm.)", ylabel="Nível de Stress (norm.)"):
     """Plota a progressão dos neurônios época a época."""
     num_plots = len(indices_to_plot)
     cols = 4
@@ -29,27 +29,27 @@ def plot_progression(history, data, som, indices_to_plot):
     for idx, (ax, step) in enumerate(zip(axes, indices_to_plot)):
         snapshot = history[step]
 
-        # Dados reais projetados nas primeiras 2 features (social media hours x stress_level)
-        ax.scatter(data[:, 0], data[:, 5], c='lightblue', s=15, alpha=0.6, label='Dados' if idx == 0 else "")
+        # Dados reais projetados nas 2 features escolhidas
+        ax.scatter(data[:, dim0], data[:, dim1], c='lightblue', s=15, alpha=0.6, label='Dados' if idx == 0 else "")
 
         # ==== Posição Anterior dos Neurônios (Azul) ====
         if idx > 0:
             previous_step = indices_to_plot[idx - 1]
             snapshot_prev = history[previous_step]
             for (i_n, j_n) in adjacency:
-                ax.plot([snapshot_prev[i_n, 0], snapshot_prev[j_n, 0]],
-                        [snapshot_prev[i_n, 5], snapshot_prev[j_n, 5]],
+                ax.plot([snapshot_prev[i_n, dim0], snapshot_prev[j_n, dim0]],
+                        [snapshot_prev[i_n, dim1], snapshot_prev[j_n, dim1]],
                         color='blue', linewidth=0.8, alpha=0.3, linestyle='--')
-            ax.scatter(snapshot_prev[:, 0], snapshot_prev[:, 5],
+            ax.scatter(snapshot_prev[:, dim0], snapshot_prev[:, dim1],
                        c='blue', s=30, alpha=0.3, marker='s',
                        label='Posição Anterior' if idx == 1 else "")
 
         # ==== Posição Atual (Vermelho) ====
         for (i_n, j_n) in adjacency:
-            ax.plot([snapshot[i_n, 0], snapshot[j_n, 0]],
-                    [snapshot[i_n, 5], snapshot[j_n, 5]],
+            ax.plot([snapshot[i_n, dim0], snapshot[j_n, dim0]],
+                    [snapshot[i_n, dim1], snapshot[j_n, dim1]],
                     'gray', linewidth=1.0, alpha=0.6)
-        ax.scatter(snapshot[:, 0], snapshot[:, 5],
+        ax.scatter(snapshot[:, dim0], snapshot[:, dim1],
                    c='crimson', s=50, zorder=5, edgecolors='black', linewidth=0.7,
                    label='Estado Atual' if idx == 0 else "")
 
@@ -57,10 +57,9 @@ def plot_progression(history, data, som, indices_to_plot):
             ax.set_title("Estado Inicial", fontsize=11, fontweight='bold')
         else:
             ax.set_title(f"Após Época {step}", fontsize=11, fontweight='bold')
-        ax.set_xlim(-0.1, 1.1)
-        ax.set_ylim(-0.1, 1.1)
-        ax.set_xlabel("Horas em Redes Sociais (norm.)")
-        ax.set_ylabel("Nível de Stress (norm.)")
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
         if idx == 0:
             ax.legend(loc="upper left")
 
@@ -70,7 +69,7 @@ def plot_progression(history, data, som, indices_to_plot):
     fig.suptitle("Evolução da SOM – Teen Mental Health (Progresso por Épocas)", fontsize=15, fontweight='bold', y=1.02)
     plt.tight_layout()
     plt.savefig("src/pictures/mental_progression_epochs.png", dpi=120, bbox_inches='tight')
-    print("  → Gráfico de progressão salvo: src/mental_progression_epochs.png")
+    print("  -> Grafico de progressao salvo: src/mental_progression_epochs.png")
     plt.show()
 
 
@@ -116,14 +115,14 @@ def plot_cluster_grid(som, cluster_labels, true_labels, data, class_names, dim0=
 
     plt.tight_layout()
     plt.savefig("src/pictures/mental_cluster_grid.png", dpi=120, bbox_inches='tight')
-    print("  → Mapa de grade salvo: src/mental_cluster_grid.png")
+    print("  -> Mapa de grade salvo: src/mental_cluster_grid.png")
     plt.show()
 
 
-def plot_final_clusters(som, data, kmeans, labels, true_labels, class_names):
+def plot_final_clusters(som, data, kmeans, labels, true_labels, class_names, dim0=0, dim1=5, xlabel="Horas/dia em redes sociais (norm.)", ylabel="Nível de stress (norm.)", title_prefix="Estado Final dos Neurônios"):
     """
     Plota o estado FINAL dos neurônios e usa K-Means para colorir os grupos,
-    projetando nas dimensões 0 (sociais) e 5 (stress) da mesma forma que plot_progression.
+    projetando nas dimensões dim0 e dim1.
     A legenda usa os nomes (class_names) da classe dominante em cada cluster.
     """
     import matplotlib.pyplot as plt
@@ -136,13 +135,13 @@ def plot_final_clusters(som, data, kmeans, labels, true_labels, class_names):
     
     fig, ax = plt.subplots(figsize=(8, 7))
     fig.suptitle(
-        f"Estado Final dos Neurônios – {n_clusters} Clusters (K-Means)\n"
-        "(Eixos: Horas em Redes Sociais  ↔  Nível de Stress)",
+        f"{title_prefix} – {n_clusters} Clusters (K-Means)\n"
+        f"(Eixos: {xlabel}  ↔  {ylabel})",
         fontsize=12, fontweight='bold'
     )
     
     # Dados de fundo
-    ax.scatter(data[:, 0], data[:, 5],
+    ax.scatter(data[:, dim0], data[:, dim1],
                c='lightgray', s=12, alpha=0.5, label='Dados reais')
     
     # Pré-computar adjacency
@@ -156,8 +155,8 @@ def plot_final_clusters(som, data, kmeans, labels, true_labels, class_names):
     # Conexões entre vizinhos
     for (i_n, j_n) in adjacency:
         ax.plot(
-            [snapshot_final[i_n, 0], snapshot_final[j_n, 0]],
-            [snapshot_final[i_n, 5], snapshot_final[j_n, 5]],
+            [snapshot_final[i_n, dim0], snapshot_final[j_n, dim0]],
+            [snapshot_final[i_n, dim1], snapshot_final[j_n, dim1]],
             color='gray', linewidth=0.6, alpha=0.4
         )
     
@@ -183,28 +182,31 @@ def plot_final_clusters(som, data, kmeans, labels, true_labels, class_names):
     for c in range(n_clusters):
         mask = (np.array(labels) == c)
         cluster_name = cluster_to_class.get(c, "Vazio")
+        if np.any(mask):
+            ax.scatter(
+                snapshot_final[mask, dim0], snapshot_final[mask, dim1],
+                color=cores(c), s=80, zorder=5,
+                edgecolors='black', linewidths=0.5,
+                label=f'{cluster_name} (Cluster {c + 1})'
+            )
+    
+    # Centroides do KMeans (usando features dim0 e dim1)
+    # Extract only dim0 and dim1 from centroids if they exist
+    centroids = np.array(kmeans.centroids)
+    if centroids.shape[0] > 0:
         ax.scatter(
-            snapshot_final[mask, 0], snapshot_final[mask, 5],
-            color=cores(c), s=80, zorder=5,
-            edgecolors='black', linewidths=0.5,
-            label=f'{cluster_name} (Cluster {c + 1})'
+            centroids[:, dim0],
+            centroids[:, dim1],
+            marker='X', s=200, c='black', zorder=6, label='Centroide'
         )
     
-    # Centroides do KMeans (usando features 0 e 5)
-    ax.scatter(
-        kmeans.centroids[:, 0],
-        kmeans.centroids[:, 5],
-        marker='X', s=200, c='black', zorder=6, label='Centroide'
-    )
-    
-    ax.set_xlim(-0.05, 1.05)
-    ax.set_ylim(-0.05, 1.05)
-    ax.set_xlabel("Horas/dia em redes sociais (norm.)")
-    ax.set_ylabel("Nível de stress (norm.)")
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
     ax.legend(loc='upper right')
     ax.grid(True, linestyle='--', alpha=0.3)
     
     plt.tight_layout()
     plt.savefig("src/pictures/clusters_finais.png", dpi=120, bbox_inches='tight')
-    print("  → Gráfico de clusters em 2D salvo: src/clusters_finais.png")
+    print("  -> Grafico de clusters em 2D salvo: src/clusters_finais.png")
     plt.show()

@@ -10,6 +10,7 @@ class SOM:
         self.column = column
         self.dimension = dimension
         self.learning_rate = learning_rate
+        self.initial_learning_rate = learning_rate
         self.sigma = sigma if sigma is not None else max(line, column) / 2.0 # Raio de vizinhança inicial (vizinhança gaussiana)
         self.init_sigma = sigma if sigma is not None else max(line, column) / 2.0 # Raio de vizinhança inicial (vizinhança gaussiana)
         self.num_neurons = line * column
@@ -111,7 +112,7 @@ class SOM:
         return bmu_idx
 
     def _decay(self, interaction, max_interactions):
-        return self.learning_rate * np.exp(-interaction/max_interactions) 
+        return self.initial_learning_rate * np.exp(-interaction/max_interactions) 
 
     def neighborhood_decay(self, interaction, max_interactions):
         # return np.exp(-interaction / max_interactions)
@@ -160,6 +161,10 @@ class SOM:
             bmu_idx = self.find_bmu(x)
             total_sq_error += np.sum((x - self.weights[bmu_idx]) ** 2)
         return total_sq_error / len(data)
+
+    def quantization_error(self, data):
+        """Alias público para _compute_mse (Quantization Error)."""
+        return self._compute_mse(data)
 
     def _compute_accuracy(self, data, true_labels):
         """
@@ -217,8 +222,8 @@ class SOM:
                 # 1. Encontrar o BMU (retorna índice linear)
                 bmu_idx = self.find_bmu(x)
                 # 2. Decaimento da taxa de aprendizado e vizinhança
-                curr_lr = self.learning_rate = self._decay(iter_start, max_interactions)
-                curr_sigma = self.sigma = self.neighborhood_decay(iter_start, max_interactions)
+                curr_lr = self._decay(iter_start, max_interactions)
+                curr_sigma = self.neighborhood_decay(iter_start, max_interactions)
                 
                 # 3. Atualizar TODOS os pesos simultaneamente (campo gaussiano)
                 self._update_weights(x, bmu_idx, curr_lr, curr_sigma)
@@ -236,7 +241,103 @@ class SOM:
                 X_labeled, y_labeled = labeled_data
                 acc = self._compute_accuracy(X_labeled, y_labeled)
                 self.history_accuracy.append(acc)
-                print(f"Época {epoch+1}/{num_epoch} | LR={epoch_lr:.4f} | σ={epoch_sigma:.4f} | MSE={mse:.4f} | Acc={acc:.2%}")
+                print(f"Epoca {epoch+1}/{num_epoch} | LR={epoch_lr:.4f} | sigma={epoch_sigma:.4f} | MSE={mse:.4f} | Acc={acc:.2%}")
             else:
-                print(f"Época {epoch+1}/{num_epoch} | LR={epoch_lr:.4f} | σ={epoch_sigma:.4f} | MSE={mse:.4f}")
+                print(f"Epoca {epoch+1}/{num_epoch} | LR={epoch_lr:.4f} | sigma={epoch_sigma:.4f} | MSE={mse:.4f}")
     
+    def compute_confusion_matrix(self, data, true_labels, num_classes):
+        """
+        Gera uma matriz de confusão da SOM como classificador.
+        Cada amostra é classificada pelo label dominante do seu BMU.
+        Retorna uma matriz (num_classes x num_classes) onde:
+            confusion[true][predicted] = contagem
+        """
+        from collections import Counter
+        
+        # Descobre o label dominante de cada neurônio
+        neuron_labels = {idx: [] for idx in range(self.num_neurons)}
+        for x, label in zip(data, true_labels):
+            bmu_idx = self.find_bmu(x)
+            neuron_labels[bmu_idx].append(label)
+        
+        dominant_label = {}
+        for idx, labels in neuron_labels.items():
+            if labels:
+                dominant_label[idx] = Counter(labels).most_common(1)[0][0]
+        
+        # Monta a matriz de confusão
+        matrix = np.zeros((num_classes, num_classes), dtype=int)
+        for x, true_label in zip(data, true_labels):
+            bmu_idx = self.find_bmu(x)
+            pred = dominant_label.get(bmu_idx, -1)
+            if pred >= 0:
+                matrix[true_label][pred] += 1
+        
+        return matrix
+
+
+    def get_cluster_grid(self, cluster_labels):
+        """
+        Dada uma lista de labels (índice de cluster para cada neurônio),
+        retorna uma grade 2D (line x column) com o label de cluster de cada posição.
+        A ordem dos labels segue a mesma de self.weights (row-major).
+        """
+        return np.array(cluster_labels).reshape(self.line, self.column)
+
+    def label_nodes_by_data(self, data, true_labels):
+        """
+        Para cada neurônio da grade, associa o label mais frequente entre as
+        amostras de dados cujo BMU é aquele neurônio.
+        Retorna uma grade 2D (line x column) com o label dominante em cada
+        célula (ou -1 se sem amostras) e um dicionário {(row, col): [labels]}.
+        """
+        from collections import Counter
+
+        node_label_map = {(r, c): [] for r in range(self.line) for c in range(self.column)}
+
+        for x, label in zip(data, true_labels):
+            bmu_idx = self.find_bmu(x)
+            pos = self.grid_positions[bmu_idx]
+            node_label_map[(pos[0], pos[1])].append(label)
+
+        label_grid = np.full((self.line, self.column), -1, dtype=int)
+        for (row, col), labels in node_label_map.items():
+            if labels:
+                label_grid[row, col] = Counter(labels).most_common(1)[0][0]
+
+        return label_grid, node_label_map
+
+    @staticmethod
+    def save_experiment(path, seed, initial_weights, sample_order, config=None):
+        """
+        Salva a topologia completa do experimento em disco para permitir replicá-lo.
+        Args:
+            path: caminho do arquivo de saída (.json).
+            seed: semente aleatória usada no experimento.
+            initial_weights: array (num_neurons x dim) com os pesos iniciais antes do treino.
+            sample_order: lista com os índices das amostras na ordem em que foram apresentadas.
+            config: dicionário opcional com hiperparâmetros da SOM (linha, coluna, lr, sigma...).
+        """
+        os.makedirs(os.path.dirname(path) if os.path.dirname(path) else '.', exist_ok=True)
+        experiment = {
+            'seed': int(seed),
+            'initial_weights': initial_weights.tolist(),
+            'sample_order': [int(i) for i in sample_order],
+            'config': config or {}
+        }
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(experiment, f, indent=2, ensure_ascii=False)
+        print(f"Topologia do experimento salva em: {path}")
+
+    @staticmethod
+    def load_experiment(path):
+        """
+        Carrega a topologia de um experimento salvo anteriormente.
+        Returns:
+            dict com 'seed', 'initial_weights' (np.array), 'sample_order' (list) e 'config' (dict).
+        """
+        with open(path, 'r', encoding='utf-8') as f:
+            experiment = json.load(f)
+        experiment['initial_weights'] = np.array(experiment['initial_weights'])
+        print(f"Topologia carregada de: {path}")
+        return experiment

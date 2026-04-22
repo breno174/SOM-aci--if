@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 
 # ─────────────────────────── Funções de Plotagem ───────────────────────────
 
-SAVE_DIR = "src/picture"
+SAVE_DIR = "src/pictures"
 
-def plot_progression(history, data, som, indices_to_plot, dim0=0, dim1=5, xlabel="Horas em Redes Sociais (norm.)", ylabel="Nível de Stress (norm.)"):
+def plot_progression(history, data, som, indices_to_plot, dim0=0, dim1=5, xlabel="Horas em Redes Sociais (norm.)", ylabel="Nível de Stress (norm.)", save_dir=SAVE_DIR):
     """Plota a progressão dos neurônios época a época."""
     num_plots = len(indices_to_plot)
     cols = 4
@@ -70,12 +70,12 @@ def plot_progression(history, data, som, indices_to_plot, dim0=0, dim1=5, xlabel
 
     fig.suptitle("Evolução da SOM – Teen Mental Health (Progresso por Épocas)", fontsize=15, fontweight='bold', y=1.02)
     plt.tight_layout()
-    plt.savefig("{SAVE_DIR}/mental_progression_epochs.png", dpi=120, bbox_inches='tight')
-    print("  -> Grafico de progressao salvo: src/mental_progression_epochs.png")
+    plt.savefig(f"{SAVE_DIR}/mental_progression_epochs.png", dpi=120, bbox_inches='tight')
+    print(f"  -> Grafico de progressao salvo: {SAVE_DIR}/mental_progression_epochs.png")
     plt.show()
 
 
-def plot_cluster_grid(som, cluster_labels, true_labels, data, class_names, dim0=0, dim1=5):
+def plot_cluster_grid(som, cluster_labels, true_labels, data, class_names, dim0=0, dim1=5, save_dir=SAVE_DIR):
     """Plota o mapa de grade da SOM com clusters K-Means e labels reais."""
     cluster_grid = som.get_cluster_grid(cluster_labels)
     label_grid, node_counts = som.label_nodes_by_data(data, true_labels)
@@ -116,12 +116,12 @@ def plot_cluster_grid(som, cluster_labels, true_labels, data, class_names, dim0=
         ax.legend(handles=legend_handles, loc='upper right', fontsize=8)
 
     plt.tight_layout()
-    plt.savefig("{SAVE_DIR}/mental_cluster_grid.png", dpi=120, bbox_inches='tight')
-    print("  -> Mapa de grade salvo: src/mental_cluster_grid.png")
+    plt.savefig(f"{SAVE_DIR}/mental_cluster_grid.png", dpi=120, bbox_inches='tight')
+    print(f"  -> Mapa de grade salvo: {SAVE_DIR}/mental_cluster_grid.png")
     plt.show()
 
 
-def plot_final_clusters(som, data, kmeans, labels, true_labels, class_names, dim0=0, dim1=5, xlabel="Horas/dia em redes sociais (norm.)", ylabel="Nível de stress (norm.)", title_prefix="Estado Final dos Neurônios"):
+def plot_final_clusters(som, data, kmeans, labels, true_labels, class_names, dim0=0, dim1=5, xlabel="Horas/dia em redes sociais (norm.)", ylabel="Nível de stress (norm.)", title_prefix="Estado Final dos Neurônios", save_dir=SAVE_DIR):
     """
     Plota o estado FINAL dos neurônios e usa K-Means para colorir os grupos,
     projetando nas dimensões dim0 e dim1.
@@ -209,14 +209,15 @@ def plot_final_clusters(som, data, kmeans, labels, true_labels, class_names, dim
     ax.grid(True, linestyle='--', alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig("{SAVE_DIR}/clusters_finais.png", dpi=120, bbox_inches='tight')
-    print("  -> Grafico de clusters em 2D salvo: {SAVE_DIR}/clusters_finais.png")
+    plt.savefig(f"{SAVE_DIR}/clusters_finais.png", dpi=120, bbox_inches='tight')
+    print(f"  -> Grafico de clusters em 2D salvo: {SAVE_DIR}/clusters_finais.png")
     plt.show()
 
 
 def plot_kmeans_comparison(som, data, kmeans_data, kmeans_data_labels, kmeans_neurons, neuron_labels,
                            true_labels, class_names, dim0=0, dim1=1,
-                           xlabel="Feature 0", ylabel="Feature 1"):
+                           xlabel="Feature 0", ylabel="Feature 1",
+                           save_dir=SAVE_DIR):
     """
     Plota lado a lado:
       - (Esquerda) K-Means aplicado diretamente nos dados brutos
@@ -328,6 +329,6 @@ def plot_kmeans_comparison(som, data, kmeans_data, kmeans_data_labels, kmeans_ne
     ax_r.grid(True, linestyle='--', alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig("{SAVE_DIR}/kmeans_comparison.png", dpi=120, bbox_inches='tight')
-    print("  -> Comparacao K-Means salva: {SAVE_DIR}/kmeans_comparison.png")
+    plt.savefig(f"{SAVE_DIR}/kmeans_comparison.png", dpi=120, bbox_inches='tight')
+    print(f"  -> Comparacao K-Means salva: {SAVE_DIR}/kmeans_comparison.png")
     plt.show()

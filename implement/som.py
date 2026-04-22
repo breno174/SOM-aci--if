@@ -241,9 +241,9 @@ class SOM:
                 X_labeled, y_labeled = labeled_data
                 acc = self._compute_accuracy(X_labeled, y_labeled)
                 self.history_accuracy.append(acc)
-                print(f"Epoca {epoch+1}/{num_epoch} | LR={epoch_lr:.4f} | sigma={epoch_sigma:.4f} | MSE={mse:.4f} | Acc={acc:.2%}")
+                print(f"Epoca {epoch+1}/{num_epoch} | pesos={self.weights} | LR={epoch_lr:.4f} | sigma={epoch_sigma:.4f} | MSE={mse:.4f} | Acc={acc:.2%}")
             else:
-                print(f"Epoca {epoch+1}/{num_epoch} | LR={epoch_lr:.4f} | sigma={epoch_sigma:.4f} | MSE={mse:.4f}")
+                print(f"Epoca {epoch+1}/{num_epoch} | pesos={self.weights} | LR={epoch_lr:.4f} | sigma={epoch_sigma:.4f} | MSE={mse:.4f}")
     
     def compute_confusion_matrix(self, data, true_labels, num_classes):
         """

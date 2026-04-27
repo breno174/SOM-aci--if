@@ -35,3 +35,14 @@ Atributos da imagem:
 - Largura Média: média aritmética da largura dos objetos em relação à quantidade de objetos da imagem.  
 - Maior área: maior área dentre todos os objetos da imagem.
 
+
+############
+No treinamento remover o outlier
+mas deixar no conjunto de teste para identificação clara no teste.
+
+guardar os pesos em cada época, para no caso do erro sqd de teste começar a subir, para o treinamento.
+
+# Passos
+- analise estatística dos dados
+- media, variância e correlação
+Dica: olhar a variância por classe

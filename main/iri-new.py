@@ -14,8 +14,8 @@ from src.helper.plot import plot_progression, plot_cluster_grid, plot_final_clus
 
 # ── Configurações ──────────────────────────────────────────────────
 NUM_EPOCHS   = 100          # épocas de treinamento
-GRID_M       = 2            # linhas do grid SOM
-GRID_N       = 2            # colunas do grid SOM
+GRID_M       = 4            # linhas do grid SOM
+GRID_N       = 4            # colunas do grid SOM
 LR           = 0.3          # taxa de aprendizado inicial
 SIGMA        = 2            # raio de vizinhança inicial
 N_CLUSTERS   = 3            # número de clusters K-Means (3 para Iris)

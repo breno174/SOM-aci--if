@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import random
 from datetime import datetime
 from itertools import product
 
@@ -31,6 +32,7 @@ GRID_N_VALUES = [3, 5, 7, 9]          # colunas do grid SOM
 LR_VALUES = [0.1, 0.2, 0.3, 0.4, 0.5] # taxa de aprendizado inicial
 SIGMA_VALUES = [3, 5, 7, 9]           # raio de vizinhança inicial
 NUM_RUNS_PER_TOPO = 5                 # treinos independentes por topologia
+MAX_TOTAL_RUNS = 40                   # limite máximo de treinos no total
 
 
 def generate_topologies():
@@ -463,8 +465,17 @@ def main():
 
     # ── Gerar topologias ───────────────────────────────────────────
     topologies = generate_topologies()
+    
+    # Embaralhar para escolher topologias aleatoriamente
+    random.shuffle(topologies)
+    
+    # Limitar o número de topologias para não ultrapassar MAX_TOTAL_RUNS
+    max_topos = max(1, MAX_TOTAL_RUNS // NUM_RUNS_PER_TOPO)
+    if len(topologies) > max_topos:
+        topologies = topologies[:max_topos]
+        
     total_topos = len(topologies)
-    print(f"\n[INFO] {total_topos} topologias válidas geradas.")
+    print(f"\n[INFO] {total_topos} topologias selecionadas aleatoriamente.")
     print(f"[INFO] {NUM_RUNS_PER_TOPO} treinos por topologia → {total_topos * NUM_RUNS_PER_TOPO} treinos totais.")
 
     # Armazena resumo de cada topologia

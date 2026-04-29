@@ -19,77 +19,73 @@ from src.helper.plot import (
 )
 
 # ── Configurações ──────────────────────────────────────────────────
-NUM_EPOCHS = 140  # épocas de treinamento
-GRID_M = 6  # linhas do grid SOM
-GRID_N = 6  # colunas do grid SOM
-LR = 0.4  # taxa de aprendizado inicial
-SIGMA = 3  # raio de vizinhança inicial
+NUM_EPOCHS = 150  # épocas de treinamento
+GRID_M = 7  # linhas do grid SOM
+GRID_N = 7  # colunas do grid SOM
+LR = 0.3  # taxa de aprendizado inicial
+SIGMA = 7  # raio de vizinhança inicial
 N_CLUSTERS = 3  # número de clusters K-Means (3 macro-classes: Ótimo, Normal, Ruim)
 SAVE_DIR = "src/acoPictures"  # diretório para salvar gráficos
 
 
-def train_test_split_manual(X, y_macro, y_raw, seed=42):
+def train_test_split_hierarchical(X, y_macro, y_raw, test_size=0.2, seed=42):
     np.random.seed(seed)
 
     train_idx = []
     test_idx = []
 
-    # Ótimo (0) e Normal (1) - Separando 59 para treino
-    for macro_class in [0, 1]:
-        idx_macro = np.where(y_macro == macro_class)[0]
-        np.random.shuffle(idx_macro)
-        train_idx.extend(idx_macro[:59])
-        test_idx.extend(idx_macro[59:])
+    subclasses = np.unique(y_raw)
 
-    # Ruim (2) - Estratificando com regra fixa para c4_p4
-    idx_ruim = np.where(y_macro == 2)[0]
-    y_raw_ruim = y_raw[idx_ruim]
+    for c in subclasses:
+        idx = np.where(y_raw == c)[0]
+        np.random.shuffle(idx)
 
-    unique_ruim, counts_ruim = np.unique(y_raw_ruim, return_counts=True)
-    total_ruim = len(idx_ruim)
-    target_train_ruim = 59
+        n = len(idx)
 
-    allocations = {}
-    for c, count in zip(unique_ruim, counts_ruim):
-        if c == "c4_p4":
-            allocations[c] = 3  # Conforme solicitado: 3 treino, 2 teste
+        # split proporcional
+        n_test = int(np.round(n * test_size))
+
+        # garante presença mínima em ambos os conjuntos (se n >= 2)
+        if n >= 2:
+            n_test = max(1, min(n - 1, n_test))
         else:
-            allocations[c] = int(np.round(count * (target_train_ruim / total_ruim)))
+            n_test = 0
 
-    # Ajuste para garantir soma de 59 exatos no treino
-    current_sum = sum(allocations.values())
-    diff = target_train_ruim - current_sum
+        n_train = n - n_test
 
-    # Distribui a diferença nas classes mais frequentes (ignorando c4_p4)
-    classes_for_adj = [c for c in unique_ruim if c != "c4_p4"]
-    classes_for_adj.sort(key=lambda x: -dict(zip(unique_ruim, counts_ruim))[x])
+        train_idx.extend(idx[:n_train])
+        test_idx.extend(idx[n_train:])
 
-    i = 0
-    while diff > 0:
-        allocations[classes_for_adj[i % len(classes_for_adj)]] += 1
-        diff -= 1
-        i += 1
+    train_idx = np.array(train_idx)
+    test_idx = np.array(test_idx)
 
-    i = 0
-    while diff < 0:
-        if allocations[classes_for_adj[i % len(classes_for_adj)]] > 0:
-            allocations[classes_for_adj[i % len(classes_for_adj)]] -= 1
-            diff += 1
-        i += 1
-
-    # Aplicar os tamanhos de treino alocados
-    for c in unique_ruim:
-        idx_c = idx_ruim[y_raw_ruim == c]
-        np.random.shuffle(idx_c)
-        n_train = allocations[c]
-        train_idx.extend(idx_c[:n_train])
-        test_idx.extend(idx_c[n_train:])
-
-    # Embaralhar os índices finais
     np.random.shuffle(train_idx)
     np.random.shuffle(test_idx)
 
-    return X[train_idx], X[test_idx], y_macro[train_idx], y_macro[test_idx]
+    y_raw_arr = np.array(y_raw)
+    return (
+        X[train_idx],
+        X[test_idx],
+        y_macro[train_idx],
+        y_macro[test_idx],
+        y_raw_arr[train_idx],
+        y_raw_arr[test_idx],
+    )
+
+
+def convert_raw_to_macro(y_raw_list):
+    """Converte predições y_raw de volta para y_macro (0, 1, 2)"""
+    macro_map = {
+        "c1_p1": 0,
+        "c2_p1": 1,
+    }
+    y_macro_pred = []
+    for y in y_raw_list:
+        if y in macro_map:
+            y_macro_pred.append(macro_map[y])
+        else:
+            y_macro_pred.append(2)  # Tudo que não for c1_p1 ou c2_p1 é "Ruim" (2)
+    return np.array(y_macro_pred)
 
 
 def centroid_to_neuron_distance(centroids, som_weights):
@@ -222,8 +218,8 @@ def main():
         sigma=SIGMA,
     )
     # 1. separar
-    X_train, X_test, y_train, y_test = train_test_split_manual(
-        X, species_int, y_raw.values
+    X_train, X_test, y_train, y_test, y_train_raw, y_test_raw = (
+        train_test_split_hierarchical(X, species_int, y_raw.values, test_size=0.2)
     )
     # 2. treinar SOM
     som.train(
@@ -231,18 +227,28 @@ def main():
     )
     print("      Treinamento concluído!")
 
+    # Aplicar rotulação baseada em y_raw
+    som.fit_predict_labels(X_train, y_train_raw)
+
     # ── [TESTE] Avaliação no conjunto de teste ────────────────────────
     print("\n[TESTE] Avaliando no conjunto de teste...")
 
-    # 3a. Acurácia final
-    acc = som.compute_accuracy(X_train, y_train, X_test, y_test)
+    # 3a. Acurácia final com k-BMUs
+    y_pred_raw = som.predict_k_bmu(X_test, k=3)
+    y_pred_macro = convert_raw_to_macro(y_pred_raw)
+
+    correct = np.sum(y_pred_macro == y_test)
+    acc = correct / len(y_test)
     print(
-        f"      Acurácia (teste): {acc:.2%}  ({int(acc * len(y_test))}/{len(y_test)} corretos)"
+        f"      Acurácia (teste, 3-BMU): {acc:.2%}  ({correct}/{len(y_test)} corretos)"
     )
 
     # 3b. Matriz de confusão
     num_classes = len(species_names)
-    conf_matrix = som.compute_confusion_matrix(X_test, y_test, num_classes)
+    conf_matrix = np.zeros((num_classes, num_classes), dtype=int)
+    for t_label, p_label in zip(y_test, y_pred_macro):
+        conf_matrix[t_label][p_label] += 1
+
     print("      Matriz de confusão (linhas=real, colunas=predito):")
     print(conf_matrix)
 

@@ -496,6 +496,55 @@ class SOM:
             print(f"Gráfico de decaimento salvo em: {save_path}")
         plt.show()
 
+    def fit_predict_labels(self, X_train, y_train_raw):
+        """
+        Associa o y_raw ao neurônio correspondente (BMU) para cada amostra de treino.
+        Armazena todos os rótulos e define o rótulo final do neurônio por majority vote.
+        """
+        from collections import Counter
+        self.neuron_raw_labels = {i: [] for i in range(self.num_neurons)}
+        
+        for x, y in zip(X_train, y_train_raw):
+            bmu = self.find_bmu(x)
+            self.neuron_raw_labels[bmu].append(y)
+            
+        self.neuron_majority_label = {}
+        for i, labels in self.neuron_raw_labels.items():
+            if labels:
+                self.neuron_majority_label[i] = Counter(labels).most_common(1)[0][0]
+            else:
+                self.neuron_majority_label[i] = None
+
+    def predict_k_bmu(self, X, k=3, epsilon=1e-8):
+        """
+        Predição usando k BMUs mais próximos e votação ponderada por distância.
+        Retorna as predições y_raw.
+        """
+        from collections import defaultdict
+        y_pred = []
+        
+        for x in X:
+            distancias = [self._euclidean_distance(x, w) for w in self.weights]
+            top_k_idx = np.argsort(distancias)[:k]
+            
+            votes = defaultdict(float)
+            for idx in top_k_idx:
+                # Usa .get() retornando None caso self.neuron_majority_label não tenha a chave,
+                # ou caso a chave exista mas o valor seja None
+                label = self.neuron_majority_label.get(idx)
+                if label is not None:
+                    weight = 1.0 / (distancias[idx] + epsilon)
+                    votes[label] += weight
+            
+            if votes:
+                best_label = max(votes.items(), key=lambda item: item[1])[0]
+            else:
+                best_label = None # Fallback
+                
+            y_pred.append(best_label)
+            
+        return np.array(y_pred)
+
     @staticmethod
     def save_experiment(path, seed, initial_weights, sample_order, config=None):
         """

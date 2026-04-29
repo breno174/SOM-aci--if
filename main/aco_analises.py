@@ -19,36 +19,77 @@ from src.helper.plot import (
 )
 
 # ── Configurações ──────────────────────────────────────────────────
-NUM_EPOCHS = 100  # épocas de treinamento
-GRID_M = 7  # linhas do grid SOM
-GRID_N = 7  # colunas do grid SOM
+NUM_EPOCHS = 140  # épocas de treinamento
+GRID_M = 6  # linhas do grid SOM
+GRID_N = 6  # colunas do grid SOM
 LR = 0.4  # taxa de aprendizado inicial
 SIGMA = 3  # raio de vizinhança inicial
-N_CLUSTERS = 6  # número de clusters K-Means (3 para Iris)
+N_CLUSTERS = 3  # número de clusters K-Means (3 macro-classes: Ótimo, Normal, Ruim)
 SAVE_DIR = "src/acoPictures"  # diretório para salvar gráficos
 
 
-def train_test_split_manual(X, y, test_size=0.2, seed=42):
+def train_test_split_manual(X, y_macro, y_raw, seed=42):
     np.random.seed(seed)
 
-    n_samples = len(X)
-    indices = np.arange(n_samples)
+    train_idx = []
+    test_idx = []
 
-    # embaralha índices (mantém X e y alinhados)
-    np.random.shuffle(indices)
+    # Ótimo (0) e Normal (1) - Separando 59 para treino
+    for macro_class in [0, 1]:
+        idx_macro = np.where(y_macro == macro_class)[0]
+        np.random.shuffle(idx_macro)
+        train_idx.extend(idx_macro[:59])
+        test_idx.extend(idx_macro[59:])
 
-    split = int(n_samples * (1 - test_size))
+    # Ruim (2) - Estratificando com regra fixa para c4_p4
+    idx_ruim = np.where(y_macro == 2)[0]
+    y_raw_ruim = y_raw[idx_ruim]
 
-    train_idx = indices[:split]
-    test_idx = indices[split:]
+    unique_ruim, counts_ruim = np.unique(y_raw_ruim, return_counts=True)
+    total_ruim = len(idx_ruim)
+    target_train_ruim = 59
 
-    X_train = X[train_idx]
-    X_test = X[test_idx]
+    allocations = {}
+    for c, count in zip(unique_ruim, counts_ruim):
+        if c == "c4_p4":
+            allocations[c] = 3  # Conforme solicitado: 3 treino, 2 teste
+        else:
+            allocations[c] = int(np.round(count * (target_train_ruim / total_ruim)))
 
-    y_train = y[train_idx]
-    y_test = y[test_idx]
+    # Ajuste para garantir soma de 59 exatos no treino
+    current_sum = sum(allocations.values())
+    diff = target_train_ruim - current_sum
 
-    return X_train, X_test, y_train, y_test
+    # Distribui a diferença nas classes mais frequentes (ignorando c4_p4)
+    classes_for_adj = [c for c in unique_ruim if c != "c4_p4"]
+    classes_for_adj.sort(key=lambda x: -dict(zip(unique_ruim, counts_ruim))[x])
+
+    i = 0
+    while diff > 0:
+        allocations[classes_for_adj[i % len(classes_for_adj)]] += 1
+        diff -= 1
+        i += 1
+
+    i = 0
+    while diff < 0:
+        if allocations[classes_for_adj[i % len(classes_for_adj)]] > 0:
+            allocations[classes_for_adj[i % len(classes_for_adj)]] -= 1
+            diff += 1
+        i += 1
+
+    # Aplicar os tamanhos de treino alocados
+    for c in unique_ruim:
+        idx_c = idx_ruim[y_raw_ruim == c]
+        np.random.shuffle(idx_c)
+        n_train = allocations[c]
+        train_idx.extend(idx_c[:n_train])
+        test_idx.extend(idx_c[n_train:])
+
+    # Embaralhar os índices finais
+    np.random.shuffle(train_idx)
+    np.random.shuffle(test_idx)
+
+    return X[train_idx], X[test_idx], y_macro[train_idx], y_macro[test_idx]
 
 
 def centroid_to_neuron_distance(centroids, som_weights):
@@ -67,27 +108,49 @@ def centroid_to_neuron_distance(centroids, som_weights):
     return total / len(centroids)
 
 
-def train_test_split_manual(X, y, test_size=0.2, seed=42):
-    np.random.seed(seed)
+#### -----------------------------------
+# y_raw = []
+# ruim_counts = {'c3_p1': 35, 'c3_p2': 35, 'c3_p3': 35, 'c3_p4': 35, 'c4_p2': 25, 'c4_p3': 25, 'c4_p1': 5, 'c4_p4': 5}
+# for k, v in ruim_counts.items():
+#     y_raw.extend([k]*v)
+# y_raw = np.array(y_raw)
+# y_macro = np.array([2]*len(y_raw))
 
-    n_samples = len(X)
-    indices = np.arange(n_samples)
+# idx_ruim = np.where(y_macro == 2)[0]
+# y_raw_ruim = y_raw[idx_ruim]
 
-    # embaralha índices (mantém X e y alinhados)
-    np.random.shuffle(indices)
+# unique_ruim, counts_ruim = np.unique(y_raw_ruim, return_counts=True)
+# total_ruim = len(idx_ruim)
+# target_test_ruim = 59
 
-    split = int(n_samples * (1 - test_size))
+# allocations = {}
+# for c, count in zip(unique_ruim, counts_ruim):
+#     if c == 'c4_p4':
+#         allocations[c] = 2
+#     else:
+#         allocations[c] = int(np.round(count * (target_test_ruim / total_ruim)))
 
-    train_idx = indices[:split]
-    test_idx = indices[split:]
+# current_sum = sum(allocations.values())
+# diff = target_test_ruim - current_sum
 
-    X_train = X[train_idx]
-    X_test = X[test_idx]
+# classes_for_adj = [c for c in unique_ruim if c != 'c4_p4']
+# classes_for_adj.sort(key=lambda x: -dict(zip(unique_ruim, counts_ruim))[x])
 
-    y_train = y[train_idx]
-    y_test = y[test_idx]
+# i = 0
+# while diff > 0:
+#     allocations[classes_for_adj[i % len(classes_for_adj)]] += 1
+#     diff -= 1
+#     i += 1
 
-    return X_train, X_test, y_train, y_test
+# while diff < 0:
+#     if allocations[classes_for_adj[i % len(classes_for_adj)]] > 0:
+#         allocations[classes_for_adj[i % len(classes_for_adj)]] -= 1
+#         diff += 1
+#     i += 1
+
+# print(allocations)
+# print('Total:', sum(allocations.values()))
+#### -----------------------------------
 
 
 def main():
@@ -95,15 +158,37 @@ def main():
     print("[1/7] Carregando dados (sem normalização)...")
     # carregar corretamente
     df = pd.read_csv("data/Dados.csv", header=None)
-
+    # coluna de dados classificados e proporção dos dados
+    count_by_class = df.iloc[:, -1].value_counts()
+    print(count_by_class)
     # separar labels
     y_raw = df.iloc[:, -1]
 
-    # mapear para inteiro
-    species_map = {v: i for i, v in enumerate(sorted(y_raw.unique()))}
-    species_names = [k for k, _ in sorted(species_map.items(), key=lambda x: x[1])]
-    print(f"      Classes: {species_names}")
-    species_int = y_raw.map(species_map).values
+    # mapear para inteiro (classes originais)
+    species_map_orig = {v: i for i, v in enumerate(sorted(y_raw.unique()))}
+    species_names_orig = [
+        k for k, _ in sorted(species_map_orig.items(), key=lambda x: x[1])
+    ]
+    print(f"      Classes originais: {species_names_orig}")
+
+    # ── Agrupar em 3 macro-classes ──────────────────────────────────
+    #   0 = Ótimo  (c1_p1)
+    #   1 = Normal (c2_p1)
+    #   2 = Ruim   (c3_* e c4_*)
+    def _map_to_group(label: str) -> int:
+        if label.startswith("c1"):
+            return 0  # Ótimo
+        elif label.startswith("c2"):
+            return 1  # Normal
+        else:
+            return 2  # Ruim  (c3_*, c4_*, …)
+
+    species_names = ["Ótimo", "Normal", "Ruim"]
+    species_int = y_raw.map(_map_to_group).values
+    print(f"      Macro-classes: {species_names}")
+    print(
+        f"      Distribuição: {dict(zip(*np.unique(species_int, return_counts=True)))}"
+    )
 
     print("[2/7] aplicando normalização...")
     # remover colunas indesejadas + label
@@ -137,7 +222,9 @@ def main():
         sigma=SIGMA,
     )
     # 1. separar
-    X_train, X_test, y_train, y_test = train_test_split_manual(X, species_int)
+    X_train, X_test, y_train, y_test = train_test_split_manual(
+        X, species_int, y_raw.values
+    )
     # 2. treinar SOM
     som.train(
         X_train, num_epoch=NUM_EPOCHS, X_test=X_test, y_train=y_train, y_test=y_test
@@ -149,7 +236,9 @@ def main():
 
     # 3a. Acurácia final
     acc = som.compute_accuracy(X_train, y_train, X_test, y_test)
-    print(f"      Acurácia (teste): {acc:.2%}  ({int(acc * len(y_test))}/{len(y_test)} corretos)")
+    print(
+        f"      Acurácia (teste): {acc:.2%}  ({int(acc * len(y_test))}/{len(y_test)} corretos)"
+    )
 
     # 3b. Matriz de confusão
     num_classes = len(species_names)
@@ -167,13 +256,17 @@ def main():
     ax_cm.set_yticklabels(species_names, fontsize=9)
     ax_cm.set_xlabel("Predito", fontsize=11)
     ax_cm.set_ylabel("Real", fontsize=11)
-    ax_cm.set_title(f"Matriz de Confusão — Teste  (Acc={acc:.2%})", fontsize=13, fontweight="bold")
+    ax_cm.set_title(
+        f"Matriz de Confusão — Teste  (Acc={acc:.2%})", fontsize=13, fontweight="bold"
+    )
     # anotar cada célula com o valor
     for i in range(num_classes):
         for j in range(num_classes):
             val = conf_matrix[i, j]
             color = "white" if val > conf_matrix.max() * 0.6 else "black"
-            ax_cm.text(j, i, str(val), ha="center", va="center", fontsize=9, color=color)
+            ax_cm.text(
+                j, i, str(val), ha="center", va="center", fontsize=9, color=color
+            )
     plt.tight_layout()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     cm_path = f"{SAVE_DIR}/mental_confusion_matrix_{timestamp}.png"
@@ -192,9 +285,21 @@ def main():
         for j in range(som.column):
             lbl = label_grid[i, j]
             text = species_names[lbl] if lbl >= 0 else "?"
-            ax_grid.text(j, i, text, ha="center", va="center", fontsize=7, color="white",
-                         fontweight="bold")
-    ax_grid.set_title("Grid SOM — Classe Dominante por Neurônio (treino)", fontsize=12, fontweight="bold")
+            ax_grid.text(
+                j,
+                i,
+                text,
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="white",
+                fontweight="bold",
+            )
+    ax_grid.set_title(
+        "Grid SOM — Classe Dominante por Neurônio (treino)",
+        fontsize=12,
+        fontweight="bold",
+    )
     ax_grid.set_xlabel("Coluna")
     ax_grid.set_ylabel("Linha")
     plt.tight_layout()
@@ -228,22 +333,6 @@ def main():
     print("[5/7] Plotando evolução dos neurônios por épocas...")
     total = len(som.history)
     indices_to_plot = sorted(set([0] + list(range(9, total, 10)) + [total - 1]))
-
-    # dim0, dim1 = 0, 1
-    # xlabel = "AT. região - Comprimento"
-    # ylabel = "AT. região - Largura"
-
-    # plot_progression(
-    #     som.history,
-    #     X,
-    #     som,
-    #     indices_to_plot,
-    #     dim0=dim0,
-    #     dim1=dim1,
-    #     xlabel=xlabel,
-    #     ylabel=ylabel,
-    #     save_dir=SAVE_DIR,
-    # )
 
     som.plot_accuracy_history(save_path=f"{SAVE_DIR}/mental_accuracy_{timestamp}.png")
     som.plot_mse_history(save_path=f"{SAVE_DIR}/mental_eqm_{timestamp}.png")

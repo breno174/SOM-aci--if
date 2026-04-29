@@ -45,4 +45,8 @@ guardar os pesos em cada época, para no caso do erro sqd de teste começar a su
 # Passos
 - analise estatística dos dados
 - media, variância e correlação
+- verificar se a vizinhança na equação de atualização dos pesos está sendo 1 para dentro da vizinhança ou zero para fora dela.
+- ver a variância do erro quadrático no decorrer das épocas, se subir tomar uma atitude.
 Dica: olhar a variância por classe
+- separar um número fixo de amostras, como 59, para que esse número seja o que está presente tanto nas classes c1_p1 e c2_p1, e separar o máximo possível nas classes restantes
+- O restante das amostras será usado para teste

@@ -643,6 +643,37 @@ def main():
         save_path=f"{SAVE_DIR}/multi_decay_{timestamp}.png",
     )
 
+    # ── Gerar gráficos para a MELHOR topologia ──────────────────────
+    best_results = all_topo_results[best_topo_idx]
+    
+    print(f"\n[GRÁFICOS] Gerando visualizações para a MELHOR topologia ({len(best_results)} treinos)...")
+
+    # 1. Acurácia treino vs teste por rodada
+    plot_accuracy_comparison(
+        best_results,
+        species_names,
+        save_path=f"{SAVE_DIR}/best_topo_accuracy_{timestamp}.png",
+    )
+
+    # 2. EQM: média de treino e teste
+    plot_mse_comparison(
+        best_results,
+        save_path=f"{SAVE_DIR}/best_topo_eqm_{timestamp}.png",
+    )
+
+    # 3. Matriz de confusão acumulada
+    plot_confusion_matrix_mean(
+        best_results,
+        species_names,
+        save_path=f"{SAVE_DIR}/best_topo_confusion_matrix_{timestamp}.png",
+    )
+
+    # 4. Decaimento médio de sigma e learning rate
+    plot_decay_comparison(
+        best_results,
+        save_path=f"{SAVE_DIR}/best_topo_decay_{timestamp}.png",
+    )
+
     print("\n✅ Busca de topologias concluída com sucesso!")
 
 

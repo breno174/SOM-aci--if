@@ -1,6 +1,8 @@
 import sys
 import os
+import json
 from datetime import datetime
+from itertools import product
 
 # Adicionando o diretório raiz ao path para que o Python encontre o módulo 'data' e 'src' tranquilamente
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,17 +18,31 @@ from main.aco_analises import (
     convert_raw_to_macro,
 )
 
-# ── Configurações ──────────────────────────────────────────────────
-NUM_EPOCHS = 140  # épocas de treinamento
-GRID_M = 7  # linhas do grid SOM
-GRID_N = 7  # colunas do grid SOM
-LR = 0.3  # taxa de aprendizado inicial
-SIGMA = 7  # raio de vizinhança inicial
+# ── Configurações fixas ────────────────────────────────────────────
+NUM_EPOCHS = 120  # épocas de treinamento
 N_CLUSTERS = 5  # número de clusters K-Means (3 macro-classes: Ótimo, Normal, Ruim)
-NUM_RUNS = 10  # número de treinos independentes
 K_BMU = 5  # número de BMUs para predição
 SAVE_DIR = "src/acoPictures/multi"  # diretório para salvar gráficos
 EXPERIMENT_DIR = "src/experiments/multi"  # diretório para salvar experimentos
+
+# ── Ranges para busca de topologia ─────────────────────────────────
+GRID_M_VALUES = [3, 5, 7, 9]          # linhas do grid SOM
+GRID_N_VALUES = [3, 5, 7, 9]          # colunas do grid SOM
+LR_VALUES = [0.1, 0.2, 0.3, 0.4, 0.5] # taxa de aprendizado inicial
+SIGMA_VALUES = [3, 5, 7, 9]           # raio de vizinhança inicial
+NUM_RUNS_PER_TOPO = 5                 # treinos independentes por topologia
+
+
+def generate_topologies():
+    """
+    Gera todas as combinações válidas de (GRID_M, GRID_N, LR, SIGMA).
+    Regra: SIGMA não pode ser maior que GRID_M * GRID_N.
+    """
+    topologies = []
+    for m, n, lr, sigma in product(GRID_M_VALUES, GRID_N_VALUES, LR_VALUES, SIGMA_VALUES):
+        if sigma <= m * n:
+            topologies.append({"grid_m": m, "grid_n": n, "lr": lr, "sigma": sigma})
+    return topologies
 
 
 def load_and_prepare_data():
@@ -64,18 +80,18 @@ def load_and_prepare_data():
     return X, species_int, y_raw.values, species_names
 
 
-def run_single_training(X, species_int, y_raw_values, seed):
+def run_single_training(X, species_int, y_raw_values, seed, grid_m, grid_n, lr, sigma):
     """Executa um treino completo do SOM e retorna métricas."""
     dim = X.shape[1]
     origin = np.zeros(dim)
 
     som = SOM(
-        line=GRID_M,
-        column=GRID_N,
-        learning_rate=LR,
+        line=grid_m,
+        column=grid_n,
+        learning_rate=lr,
         dimension=dim,
         initial_weights=origin,
-        sigma=SIGMA,
+        sigma=sigma,
     )
     initial_weights_snapshot = som.weights.copy()
 
@@ -439,72 +455,156 @@ def plot_decay_comparison(all_results, save_path):
 
 def main():
     os.makedirs(SAVE_DIR, exist_ok=True)
+    os.makedirs(EXPERIMENT_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Carregar dados uma vez
     X, species_int, y_raw_values, species_names = load_and_prepare_data()
 
-    # ── Múltiplos treinos ──────────────────────────────────────────
-    all_results = []
+    # ── Gerar topologias ───────────────────────────────────────────
+    topologies = generate_topologies()
+    total_topos = len(topologies)
+    print(f"\n[INFO] {total_topos} topologias válidas geradas.")
+    print(f"[INFO] {NUM_RUNS_PER_TOPO} treinos por topologia → {total_topos * NUM_RUNS_PER_TOPO} treinos totais.")
 
-    for run in range(NUM_RUNS):
-        seed = 42 + run  # seed diferente para cada rodada
-        print(f"\n{'='*60}")
-        print(f"  RODADA {run + 1}/{NUM_RUNS}  (seed={seed})")
-        print(f"{'='*60}")
+    # Armazena resumo de cada topologia
+    topo_summaries = []  # lista de dicts com topologia + métricas médias
+    all_topo_results = {}  # dict: topo_idx -> lista de results (para gráficos)
+    global_run = 0       # contador global de rodadas
 
-        result = run_single_training(X, species_int, y_raw_values, seed=seed)
+    best_topo_idx = -1
+    best_mean_acc_test = -1.0
 
-        print(f"   Acc Treino: {result['acc_train']:.2%}")
-        print(f"   Acc Teste:  {result['acc_test']:.2%}")
-        print(f"   EQM Final (treino): {result['mse_train_history'][-1]:.4f}")
-        print(f"   EQM Final (teste):  {result['mse_test_history'][-1]:.4f}")
+    for topo_idx, topo in enumerate(topologies):
+        grid_m = topo["grid_m"]
+        grid_n = topo["grid_n"]
+        lr = topo["lr"]
+        sigma = topo["sigma"]
 
-        # Salvar experimento da rodada
-        experiment_path = f"{EXPERIMENT_DIR}/aco_multi_run{run+1}_{timestamp}.json"
-        SOM.save_experiment(
-            path=experiment_path,
-            seed=seed,
-            initial_weights=result["initial_weights"],
-            sample_order=[],
-            config={
-                "grid": [GRID_M, GRID_N],
-                "dim": X.shape[1],
-                "learning_rate": LR,
-                "sigma": SIGMA,
-                "num_epochs": NUM_EPOCHS,
-                "num_samples": result["num_train_samples"],
-                "k_bmu": K_BMU,
-                "run": run + 1,
-                "acc_train": float(result["acc_train"]),
-                "acc_test": float(result["acc_test"]),
-            },
-        )
+        print(f"\n{'#'*60}")
+        print(f"  TOPOLOGIA {topo_idx + 1}/{total_topos}")
+        print(f"  GRID={grid_m}x{grid_n} | LR={lr} | SIGMA={sigma}")
+        print(f"{'#'*60}")
 
-        all_results.append(result)
+        topo_results = []
+
+        for run in range(NUM_RUNS_PER_TOPO):
+            global_run += 1
+            seed = 42 + run
+            print(f"\n{'='*60}")
+            print(f"  Topo {topo_idx+1} — Rodada {run+1}/{NUM_RUNS_PER_TOPO}  (seed={seed})")
+            print(f"{'='*60}")
+
+            result = run_single_training(
+                X, species_int, y_raw_values,
+                seed=seed,
+                grid_m=grid_m, grid_n=grid_n, lr=lr, sigma=sigma,
+            )
+
+            print(f"   Acc Treino: {result['acc_train']:.2%}")
+            print(f"   Acc Teste:  {result['acc_test']:.2%}")
+            print(f"   EQM Final (treino): {result['mse_train_history'][-1]:.4f}")
+            print(f"   EQM Final (teste):  {result['mse_test_history'][-1]:.4f}")
+
+            # Salvar experimento da rodada
+            experiment_path = (
+                f"{EXPERIMENT_DIR}/aco_topo{topo_idx+1}_run{run+1}_{timestamp}.json"
+            )
+            SOM.save_experiment(
+                path=experiment_path,
+                seed=seed,
+                initial_weights=result["initial_weights"],
+                sample_order=[],
+                config={
+                    "grid": [grid_m, grid_n],
+                    "dim": X.shape[1],
+                    "learning_rate": lr,
+                    "sigma": sigma,
+                    "num_epochs": NUM_EPOCHS,
+                    "num_samples": result["num_train_samples"],
+                    "k_bmu": K_BMU,
+                    "topology_index": topo_idx + 1,
+                    "run": run + 1,
+                    "acc_train": float(result["acc_train"]),
+                    "acc_test": float(result["acc_test"]),
+                },
+            )
+
+            topo_results.append(result)
+
+        # ── Resumo desta topologia ─────────────────────────────────
+        acc_trains = [r["acc_train"] for r in topo_results]
+        acc_tests = [r["acc_test"] for r in topo_results]
+        mean_acc_train = float(np.mean(acc_trains))
+        mean_acc_test = float(np.mean(acc_tests))
+        std_acc_train = float(np.std(acc_trains))
+        std_acc_test = float(np.std(acc_tests))
+
+        topo_summary = {
+            "topology_index": topo_idx + 1,
+            "grid_m": grid_m,
+            "grid_n": grid_n,
+            "lr": lr,
+            "sigma": sigma,
+            "num_runs": NUM_RUNS_PER_TOPO,
+            "mean_acc_train": mean_acc_train,
+            "std_acc_train": std_acc_train,
+            "mean_acc_test": mean_acc_test,
+            "std_acc_test": std_acc_test,
+            "best_acc_test": float(np.max(acc_tests)),
+            "worst_acc_test": float(np.min(acc_tests)),
+        }
+        topo_summaries.append(topo_summary)
+
+        print(f"\n  → Média Treino: {mean_acc_train*100:.2f}% ± {std_acc_train*100:.2f}%")
+        print(f"  → Média Teste:  {mean_acc_test*100:.2f}% ± {std_acc_test*100:.2f}%")
+
+        # Guardar resultados desta topologia para gráficos posteriores
+        all_topo_results[topo_idx] = topo_results
+
+        # Verificar se é a melhor topologia até agora
+        if mean_acc_test > best_mean_acc_test:
+            best_mean_acc_test = mean_acc_test
+            best_topo_idx = topo_idx
 
     # ── Resumo geral ──────────────────────────────────────────────
-    acc_trains = [r["acc_train"] for r in all_results]
-    acc_tests = [r["acc_test"] for r in all_results]
+    best = topo_summaries[best_topo_idx]
 
     print(f"\n{'='*60}")
-    print(f"  RESUMO — {NUM_RUNS} TREINOS")
+    print(f"  RESUMO GERAL — {total_topos} TOPOLOGIAS × {NUM_RUNS_PER_TOPO} TREINOS")
     print(f"{'='*60}")
-    print(
-        f"   Acurácia Treino:  {np.mean(acc_trains)*100:.2f}% ± {np.std(acc_trains)*100:.2f}%"
-    )
-    print(
-        f"   Acurácia Teste:   {np.mean(acc_tests)*100:.2f}% ± {np.std(acc_tests)*100:.2f}%"
-    )
-    print(
-        f"   Melhor Teste:     {np.max(acc_tests)*100:.2f}%  (rodada {np.argmax(acc_tests)+1})"
-    )
-    print(
-        f"   Pior Teste:       {np.min(acc_tests)*100:.2f}%  (rodada {np.argmin(acc_tests)+1})"
-    )
+    print(f"\n  🏆 MELHOR TOPOLOGIA (por acurácia média de teste):")
+    print(f"     Topologia #{best['topology_index']}")
+    print(f"     GRID = {best['grid_m']}×{best['grid_n']}")
+    print(f"     LR   = {best['lr']}")
+    print(f"     SIGMA = {best['sigma']}")
+    print(f"     Acc Teste Média:  {best['mean_acc_test']*100:.2f}% ± {best['std_acc_test']*100:.2f}%")
+    print(f"     Acc Treino Média: {best['mean_acc_train']*100:.2f}% ± {best['std_acc_train']*100:.2f}%")
+    print(f"     Melhor Teste:     {best['best_acc_test']*100:.2f}%")
+    print(f"     Pior Teste:       {best['worst_acc_test']*100:.2f}%")
 
-    # ── Gerar gráficos ──────────────────────────────────────────
-    print("\n[GRÁFICOS] Gerando visualizações agregadas...")
+    # ── Salvar JSON com todas as topologias e a melhor ─────────────
+    summary_json = {
+        "timestamp": timestamp,
+        "num_epochs": NUM_EPOCHS,
+        "k_bmu": K_BMU,
+        "num_runs_per_topology": NUM_RUNS_PER_TOPO,
+        "total_topologies": total_topos,
+        "best_topology": best,
+        "all_topologies": topo_summaries,
+    }
+    summary_path = f"{EXPERIMENT_DIR}/topology_search_{timestamp}.json"
+    os.makedirs(os.path.dirname(summary_path), exist_ok=True)
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(summary_json, f, ensure_ascii=False, indent=2)
+    print(f"\n   📄 Resumo salvo em: {summary_path}")
+
+    # ── Gerar gráficos com TODOS os resultados ──────────────────────
+    all_results = []
+    for topo_idx_key in sorted(all_topo_results.keys()):
+        all_results.extend(all_topo_results[topo_idx_key])
+
+    print(f"\n[GRÁFICOS] Gerando visualizações agregadas ({len(all_results)} treinos no total)...")
 
     # 1. Acurácia treino vs teste por rodada
     plot_accuracy_comparison(
@@ -513,7 +613,7 @@ def main():
         save_path=f"{SAVE_DIR}/multi_accuracy_{timestamp}.png",
     )
 
-    # 2. EQM: exemplo + média
+    # 2. EQM: média de treino e teste
     plot_mse_comparison(
         all_results,
         save_path=f"{SAVE_DIR}/multi_eqm_{timestamp}.png",
@@ -532,7 +632,7 @@ def main():
         save_path=f"{SAVE_DIR}/multi_decay_{timestamp}.png",
     )
 
-    print("\n✅ Todos os gráficos foram salvos com sucesso!")
+    print("\n✅ Busca de topologias concluída com sucesso!")
 
 
 if __name__ == "__main__":

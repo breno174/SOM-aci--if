@@ -25,7 +25,7 @@ GRID_N = 7  # colunas do grid SOM
 LR = 0.3  # taxa de aprendizado inicial
 SIGMA = 7  # raio de vizinhança inicial
 N_CLUSTERS = 3  # número de clusters K-Means (3 macro-classes: Ótimo, Normal, Ruim)
-SAVE_DIR = "src/acoPictures"  # diretório para salvar gráficos
+SAVE_DIR = "src/single/acoPictures"  # diretório para salvar gráficos
 
 
 def train_test_split_hierarchical(X, y_macro, y_raw, test_size=0.2, seed=42):
@@ -102,51 +102,6 @@ def centroid_to_neuron_distance(centroids, som_weights):
         total += best
 
     return total / len(centroids)
-
-
-#### -----------------------------------
-# y_raw = []
-# ruim_counts = {'c3_p1': 35, 'c3_p2': 35, 'c3_p3': 35, 'c3_p4': 35, 'c4_p2': 25, 'c4_p3': 25, 'c4_p1': 5, 'c4_p4': 5}
-# for k, v in ruim_counts.items():
-#     y_raw.extend([k]*v)
-# y_raw = np.array(y_raw)
-# y_macro = np.array([2]*len(y_raw))
-
-# idx_ruim = np.where(y_macro == 2)[0]
-# y_raw_ruim = y_raw[idx_ruim]
-
-# unique_ruim, counts_ruim = np.unique(y_raw_ruim, return_counts=True)
-# total_ruim = len(idx_ruim)
-# target_test_ruim = 59
-
-# allocations = {}
-# for c, count in zip(unique_ruim, counts_ruim):
-#     if c == 'c4_p4':
-#         allocations[c] = 2
-#     else:
-#         allocations[c] = int(np.round(count * (target_test_ruim / total_ruim)))
-
-# current_sum = sum(allocations.values())
-# diff = target_test_ruim - current_sum
-
-# classes_for_adj = [c for c in unique_ruim if c != 'c4_p4']
-# classes_for_adj.sort(key=lambda x: -dict(zip(unique_ruim, counts_ruim))[x])
-
-# i = 0
-# while diff > 0:
-#     allocations[classes_for_adj[i % len(classes_for_adj)]] += 1
-#     diff -= 1
-#     i += 1
-
-# while diff < 0:
-#     if allocations[classes_for_adj[i % len(classes_for_adj)]] > 0:
-#         allocations[classes_for_adj[i % len(classes_for_adj)]] -= 1
-#         diff += 1
-#     i += 1
-
-# print(allocations)
-# print('Total:', sum(allocations.values()))
-#### -----------------------------------
 
 
 def main():
@@ -320,7 +275,7 @@ def main():
     initial_weights_snapshot = som.weights.copy()
     history_per_epoch = [initial_weights_snapshot.copy()] + som.history
     # 4. Salvar topologia do experimento
-    experiment_path = f"src/experiments/aco_mental_{timestamp}.json"
+    experiment_path = f"src/experiments/single/aco_mental_{timestamp}.json"
     SOM.save_experiment(
         path=experiment_path,
         seed="42",

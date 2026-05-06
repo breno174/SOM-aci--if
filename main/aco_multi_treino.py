@@ -27,12 +27,12 @@ SAVE_DIR = "src/acoPictures/multi"  # diretório para salvar gráficos
 EXPERIMENT_DIR = "src/experiments/multi"  # diretório para salvar experimentos
 
 # ── Ranges para busca de topologia ─────────────────────────────────
-GRID_M_VALUES = [3, 5, 7, 9]          # linhas do grid SOM
-GRID_N_VALUES = [3, 5, 7, 9]          # colunas do grid SOM
-LR_VALUES = [0.1, 0.2, 0.3, 0.4, 0.5] # taxa de aprendizado inicial
-SIGMA_VALUES = [3, 5, 7, 9]           # raio de vizinhança inicial
-NUM_RUNS_PER_TOPO = 5                 # treinos independentes por topologia
-MAX_TOTAL_RUNS = 40                   # limite máximo de treinos no total
+GRID_M_VALUES = [5, 7, 9]  # linhas do grid SOM
+GRID_N_VALUES = [5, 7, 9]  # colunas do grid SOM
+LR_VALUES = [0.2, 0.3, 0.4, 0.5]  # taxa de aprendizado inicial
+SIGMA_VALUES = [3, 5, 7, 9]  # raio de vizinhança inicial
+NUM_RUNS_PER_TOPO = 5  # treinos independentes por topologia
+MAX_TOTAL_RUNS = 50  # limite máximo de treinos no total
 
 
 def generate_topologies():
@@ -41,7 +41,9 @@ def generate_topologies():
     Regra: SIGMA não pode ser maior que GRID_M * GRID_N.
     """
     topologies = []
-    for m, n, lr, sigma in product(GRID_M_VALUES, GRID_N_VALUES, LR_VALUES, SIGMA_VALUES):
+    for m, n, lr, sigma in product(
+        GRID_M_VALUES, GRID_N_VALUES, LR_VALUES, SIGMA_VALUES
+    ):
         if sigma <= m * n:
             topologies.append({"grid_m": m, "grid_n": n, "lr": lr, "sigma": sigma})
     return topologies
@@ -72,7 +74,7 @@ def load_and_prepare_data():
     print(f"   Distribuição: {dict(zip(*np.unique(species_int, return_counts=True)))}")
 
     # remover colunas indesejadas + label
-    cols_to_drop = [5, 12, 13]
+    cols_to_drop = [5, 12, 13, 0, 3, 6, 15, 16, 17, 18, 19, 22, 23]
     X = df.drop(df.columns[cols_to_drop + [-1]], axis=1).values.astype(float)
     print(f"   {X.shape[0]} amostras | dim={X.shape[1]}")
 
@@ -165,7 +167,9 @@ def run_single_training(X, species_int, y_raw_values, seed, grid_m, grid_n, lr, 
     }
 
 
-def plot_accuracy_comparison(all_results, species_names, save_path):
+def plot_accuracy_comparison(
+    all_results, species_names, save_path, topology_text=None, x_labels=None
+):
     """
     Gráfico 1: Acurácia média de treino vs teste por rodada,
     com linha de média geral.
@@ -224,10 +228,31 @@ def plot_accuracy_comparison(all_results, species_names, save_path):
     )
     ax.set_xlabel("Rodada", fontsize=11)
     ax.set_ylabel("Acurácia (%)", fontsize=11)
-    ax.set_xticks(x)
+
+    if x_labels is not None:
+        ax.set_xticks(x)
+        ax.set_xticklabels(x_labels, rotation=45, ha="right", fontsize=8)
+    else:
+        ax.set_xticks(x)
+
     ax.grid(True, linestyle="--", alpha=0.4)
     ax.legend(fontsize=9)
-    plt.tight_layout()
+
+    if topology_text:
+        props = dict(boxstyle="round", facecolor="white", alpha=0.9, edgecolor="gray")
+        ax.text(
+            1.02,
+            1.0,
+            topology_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            bbox=props,
+        )
+        plt.subplots_adjust(right=0.75)
+    else:
+        plt.tight_layout()
+
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     print(f"   Gráfico de acurácia salvo em: {save_path}")
     plt.close(fig)
@@ -252,7 +277,7 @@ def plot_mse_comparison(all_results, save_path):
     axes[0].plot(
         epochs,
         mean_train,
-        color="#2196F3",
+        color="#2196f3",
         linewidth=2,
         marker="o",
         markersize=3,
@@ -263,7 +288,7 @@ def plot_mse_comparison(all_results, save_path):
         mean_train - std_train,
         mean_train + std_train,
         alpha=0.2,
-        color="#2196F3",
+        color="#7fe387",
         label="± 1 Desvio Padrão",
     )
     axes[0].set_title(
@@ -465,23 +490,25 @@ def main():
 
     # ── Gerar topologias ───────────────────────────────────────────
     topologies = generate_topologies()
-    
+
     # Embaralhar para escolher topologias aleatoriamente
     random.shuffle(topologies)
-    
+
     # Limitar o número de topologias para não ultrapassar MAX_TOTAL_RUNS
     max_topos = max(1, MAX_TOTAL_RUNS // NUM_RUNS_PER_TOPO)
     if len(topologies) > max_topos:
         topologies = topologies[:max_topos]
-        
+
     total_topos = len(topologies)
     print(f"\n[INFO] {total_topos} topologias selecionadas aleatoriamente.")
-    print(f"[INFO] {NUM_RUNS_PER_TOPO} treinos por topologia → {total_topos * NUM_RUNS_PER_TOPO} treinos totais.")
+    print(
+        f"[INFO] {NUM_RUNS_PER_TOPO} treinos por topologia → {total_topos * NUM_RUNS_PER_TOPO} treinos totais."
+    )
 
     # Armazena resumo de cada topologia
     topo_summaries = []  # lista de dicts com topologia + métricas médias
     all_topo_results = {}  # dict: topo_idx -> lista de results (para gráficos)
-    global_run = 0       # contador global de rodadas
+    global_run = 0  # contador global de rodadas
 
     best_topo_idx = -1
     best_mean_acc_test = -1.0
@@ -503,14 +530,28 @@ def main():
             global_run += 1
             seed = 42 + run
             print(f"\n{'='*60}")
-            print(f"  Topo {topo_idx+1} — Rodada {run+1}/{NUM_RUNS_PER_TOPO}  (seed={seed})")
+            print(
+                f"  Topo {topo_idx+1} — Rodada {run+1}/{NUM_RUNS_PER_TOPO}  (seed={seed})"
+            )
             print(f"{'='*60}")
 
             result = run_single_training(
-                X, species_int, y_raw_values,
+                X,
+                species_int,
+                y_raw_values,
                 seed=seed,
-                grid_m=grid_m, grid_n=grid_n, lr=lr, sigma=sigma,
+                grid_m=grid_m,
+                grid_n=grid_n,
+                lr=lr,
+                sigma=sigma,
             )
+
+            result["topo_idx"] = topo_idx + 1
+            result["run_idx"] = run + 1
+            result["grid_m"] = grid_m
+            result["grid_n"] = grid_n
+            result["lr"] = lr
+            result["sigma"] = sigma
 
             print(f"   Acc Treino: {result['acc_train']:.2%}")
             print(f"   Acc Teste:  {result['acc_test']:.2%}")
@@ -567,7 +608,9 @@ def main():
         }
         topo_summaries.append(topo_summary)
 
-        print(f"\n  → Média Treino: {mean_acc_train*100:.2f}% ± {std_acc_train*100:.2f}%")
+        print(
+            f"\n  → Média Treino: {mean_acc_train*100:.2f}% ± {std_acc_train*100:.2f}%"
+        )
         print(f"  → Média Teste:  {mean_acc_test*100:.2f}% ± {std_acc_test*100:.2f}%")
 
         # Guardar resultados desta topologia para gráficos posteriores
@@ -589,8 +632,12 @@ def main():
     print(f"     GRID = {best['grid_m']}×{best['grid_n']}")
     print(f"     LR   = {best['lr']}")
     print(f"     SIGMA = {best['sigma']}")
-    print(f"     Acc Teste Média:  {best['mean_acc_test']*100:.2f}% ± {best['std_acc_test']*100:.2f}%")
-    print(f"     Acc Treino Média: {best['mean_acc_train']*100:.2f}% ± {best['std_acc_train']*100:.2f}%")
+    print(
+        f"     Acc Teste Média:  {best['mean_acc_test']*100:.2f}% ± {best['std_acc_test']*100:.2f}%"
+    )
+    print(
+        f"     Acc Treino Média: {best['mean_acc_train']*100:.2f}% ± {best['std_acc_train']*100:.2f}%"
+    )
     print(f"     Melhor Teste:     {best['best_acc_test']*100:.2f}%")
     print(f"     Pior Teste:       {best['worst_acc_test']*100:.2f}%")
 
@@ -612,16 +659,31 @@ def main():
 
     # ── Gerar gráficos com TODOS os resultados ──────────────────────
     all_results = []
+    topo_legends = []
     for topo_idx_key in sorted(all_topo_results.keys()):
         all_results.extend(all_topo_results[topo_idx_key])
+        summary = next(
+            t for t in topo_summaries if t["topology_index"] == topo_idx_key + 1
+        )
+        topo_legends.append(
+            f"T{summary['topology_index']}: {summary['grid_m']}x{summary['grid_n']}, "
+            f"LR={summary['lr']}, σ={summary['sigma']}"
+        )
 
-    print(f"\n[GRÁFICOS] Gerando visualizações agregadas ({len(all_results)} treinos no total)...")
+    print(
+        f"\n[GRÁFICOS] Gerando visualizações agregadas ({len(all_results)} treinos no total)..."
+    )
+
+    x_labels_multi = [f"T{r['topo_idx']}-{r['run_idx']}" for r in all_results]
+    topology_text_multi = "Legenda de Topologias:\n" + "\n".join(topo_legends)
 
     # 1. Acurácia treino vs teste por rodada
     plot_accuracy_comparison(
         all_results,
         species_names,
         save_path=f"{SAVE_DIR}/multi_accuracy_{timestamp}.png",
+        topology_text=topology_text_multi,
+        x_labels=x_labels_multi,
     )
 
     # 2. EQM: média de treino e teste
@@ -645,14 +707,26 @@ def main():
 
     # ── Gerar gráficos para a MELHOR topologia ──────────────────────
     best_results = all_topo_results[best_topo_idx]
-    
-    print(f"\n[GRÁFICOS] Gerando visualizações para a MELHOR topologia ({len(best_results)} treinos)...")
+
+    print(
+        f"\n[GRÁFICOS] Gerando visualizações para a MELHOR topologia ({len(best_results)} treinos)..."
+    )
 
     # 1. Acurácia treino vs teste por rodada
+    best_topo_text = (
+        f"Melhor Topologia (T{best['topology_index']}):\n"
+        f"Grid: {best['grid_m']}x{best['grid_n']}\n"
+        f"Learning Rate: {best['lr']}\n"
+        f"Sigma: {best['sigma']}"
+    )
+    x_labels_best = [f"R{r['run_idx']}" for r in best_results]
+
     plot_accuracy_comparison(
         best_results,
         species_names,
         save_path=f"{SAVE_DIR}/best_topo_accuracy_{timestamp}.png",
+        topology_text=best_topo_text,
+        x_labels=x_labels_best,
     )
 
     # 2. EQM: média de treino e teste

@@ -16,6 +16,7 @@ from implement.som import SOM
 from implement.kmenasSimple import KMeans as SimpleKMeans
 from main.aco_analises import (
     train_test_split_hierarchical,
+    train_test_split_fixed,
     convert_raw_to_macro,
 )
 
@@ -32,7 +33,7 @@ GRID_N_VALUES = [5, 7, 9]  # colunas do grid SOM
 LR_VALUES = [0.2, 0.3, 0.4, 0.5]  # taxa de aprendizado inicial
 SIGMA_VALUES = [3, 5, 7, 9]  # raio de vizinhança inicial
 NUM_RUNS_PER_TOPO = 5  # treinos independentes por topologia
-MAX_TOTAL_RUNS = 50  # limite máximo de treinos no total
+MAX_TOTAL_RUNS = 10  # limite máximo de treinos no total
 
 
 def generate_topologies():
@@ -102,9 +103,13 @@ def run_single_training(X, species_int, y_raw_values, seed, grid_m, grid_n, lr, 
     # 1. separar dados com seed diferente para cada rodada
     X_train, X_test, y_train, y_test, y_train_raw, y_test_raw = (
         train_test_split_hierarchical(
-            X, species_int, y_raw_values, test_size=0.2, seed=seed
+            X, species_int, y_raw_values, test_size=0.3, seed=seed
         )
     )
+
+    # X_train, X_test, y_train, y_test, y_train_raw, y_test_raw = train_test_split_fixed(
+    #     X, species_int, y_raw_values, seed=seed
+    # )
 
     # 2. treinar SOM (sem imprimir épocas individuais)
     som.train(
@@ -277,7 +282,7 @@ def plot_mse_comparison(all_results, save_path):
     axes[0].plot(
         epochs,
         mean_train,
-        color="#2196f3",
+        color="purple",
         linewidth=2,
         marker="o",
         markersize=3,
@@ -288,7 +293,7 @@ def plot_mse_comparison(all_results, save_path):
         mean_train - std_train,
         mean_train + std_train,
         alpha=0.2,
-        color="#7fe387",
+        color="purple",
         label="± 1 Desvio Padrão",
     )
     axes[0].set_title(
@@ -339,9 +344,15 @@ def plot_mse_comparison(all_results, save_path):
     plt.close(fig)
 
 
-def plot_confusion_matrix_mean(all_results, species_names, save_path):
+def plot_confusion_matrix_mean(
+    all_results,
+    species_names,
+    save_path,
+    custom_title_prefix="Matriz de Confusão Acumulada",
+    subtitle_suffix=None,
+):
     """
-    Gráfico 3: Duas matrizes de confusão acumuladas lado a lado.
+    Gráfico 3: Duas matrizes de confusão.
     Esquerda = Treino, Direita = Teste.
     """
     num_classes = len(species_names)
@@ -364,8 +375,8 @@ def plot_confusion_matrix_mean(all_results, species_names, save_path):
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
     for ax, matrix, title, acc in [
-        (axes[0], total_train, "Matriz de Confusão Acumulada — TREINO", acc_train),
-        (axes[1], total_test, "Matriz de Confusão Acumulada — TESTE", acc_test),
+        (axes[0], total_train, f"{custom_title_prefix} — TREINO", acc_train),
+        (axes[1], total_test, f"{custom_title_prefix} — TESTE", acc_test),
     ]:
         im = ax.imshow(matrix, interpolation="nearest", cmap="Blues")
         fig.colorbar(im, ax=ax)
@@ -375,8 +386,9 @@ def plot_confusion_matrix_mean(all_results, species_names, save_path):
         ax.set_yticklabels(species_names, fontsize=10)
         ax.set_xlabel("Predito", fontsize=11)
         ax.set_ylabel("Real", fontsize=11)
+        subtitle = subtitle_suffix if subtitle_suffix else f"{n_runs} rodadas"
         ax.set_title(
-            f"{title}\n{n_runs} rodadas (Acc={acc:.2%})",
+            f"{title}\n{subtitle} (Acc={acc:.2%})",
             fontsize=12,
             fontweight="bold",
         )
@@ -735,11 +747,22 @@ def main():
         save_path=f"{SAVE_DIR}/best_topo_eqm_{timestamp}.png",
     )
 
-    # 3. Matriz de confusão acumulada
+    # 3. Matriz de confusão da melhor rodada (média da acc treino e teste)
+    best_single_run = max(
+        best_results, key=lambda r: (r["acc_train"] + r["acc_test"]) / 2
+    )
+    best_run_idx = best_single_run["run_idx"]
+    print(
+        f"   A melhor rodada da melhor topologia foi a Rodada {best_run_idx} "
+        f"(Treino: {best_single_run['acc_train']:.2%}, Teste: {best_single_run['acc_test']:.2%})"
+    )
+
     plot_confusion_matrix_mean(
-        best_results,
+        [best_single_run],
         species_names,
-        save_path=f"{SAVE_DIR}/best_topo_confusion_matrix_{timestamp}.png",
+        save_path=f"{SAVE_DIR}/best_topo_best_run_confusion_matrix_{timestamp}.png",
+        custom_title_prefix="Matriz de Confusão da Melhor Rodada",
+        subtitle_suffix=f"Rodada {best_run_idx} da T{best['topology_index']}",
     )
 
     # 4. Decaimento médio de sigma e learning rate

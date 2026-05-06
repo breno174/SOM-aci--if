@@ -73,6 +73,69 @@ def train_test_split_hierarchical(X, y_macro, y_raw, test_size=0.2, seed=42):
     )
 
 
+def train_test_split_fixed(X, y_macro, y_raw, seed=42):
+    """
+    Divisão solicitada para treino (total 175 amostras):
+    - Ótimo (59 amostras): c1_p1 (59)
+    - Normal (58 amostras): c2_p1 (58)
+    - Ruim (58 amostras estratificadas pelas subclasses):
+        c4_p1 (3), c4_p4 (3)
+        c3_p1 (10), c3_p2 (10), c3_p3 (10), c3_p4 (10)
+        c4_p2 (6), c4_p3 (6)
+    O resto vai para o conjunto de teste.
+    """
+    np.random.seed(seed)
+
+    train_idx = []
+    test_idx = []
+
+    # Dicionário com a quantidade exata de treino por sub-classe
+    train_counts = {
+        "c1_p1": 59,
+        "c2_p1": 58,
+        "c3_p1": 10,
+        "c3_p2": 10,
+        "c3_p3": 10,
+        "c3_p4": 10,
+        "c4_p2": 6,
+        "c4_p3": 6,
+        "c4_p1": 3,
+        "c4_p4": 3
+    }
+
+    subclasses = np.unique(y_raw)
+
+    for c in subclasses:
+        idx = np.where(y_raw == c)[0]
+        np.random.shuffle(idx)
+
+        # Quantidade definida no dicionário (se não tiver, pega 0)
+        n_train = train_counts.get(c, 0)
+        
+        # Garante que não vamos tentar pegar mais do que existe
+        n_train = min(n_train, len(idx))
+
+        train_idx.extend(idx[:n_train])
+        test_idx.extend(idx[n_train:])
+
+    train_idx = np.array(train_idx)
+    test_idx = np.array(test_idx)
+
+    # Embaralhar os conjuntos finais
+    np.random.shuffle(train_idx)
+    np.random.shuffle(test_idx)
+
+    y_raw_arr = np.array(y_raw)
+    return (
+        X[train_idx],
+        X[test_idx],
+        y_macro[train_idx],
+        y_macro[test_idx],
+        y_raw_arr[train_idx],
+        y_raw_arr[test_idx],
+    )
+
+
 def convert_raw_to_macro(y_raw_list):
     """Converte predições y_raw de volta para y_macro (0, 1, 2)"""
     macro_map = {

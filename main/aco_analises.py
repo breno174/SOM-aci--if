@@ -241,7 +241,14 @@ def main():
     )
     # 2. treinar SOM
     som.train(
-        X_train, num_epoch=NUM_EPOCHS, X_test=X_test, y_train=y_train, y_test=y_test
+        X_train, 
+        num_epoch=NUM_EPOCHS, 
+        X_test=X_test, 
+        y_train=y_train, 
+        y_test=y_test,
+        early_stop=True,
+        stop_window=10,
+        stop_threshold=0.01
     )
     print("      Treinamento concluído!")
 

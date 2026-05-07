@@ -43,12 +43,42 @@ def load_and_prepare_data():
 def plot_correlation_matrix(X_df, save_dir):
     print("[2] Calculando e plotando Matriz de Correlação (Features x Features)...")
     corr_matrix = X_df.corr(method='pearson')
-    
-    plt.figure(figsize=(14, 10))
-    sns.heatmap(corr_matrix, annot=False, cmap='coolwarm', vmin=-1, vmax=1, fmt=".2f")
-    plt.title("Matriz de Correlação de Pearson entre as Features", fontsize=14, fontweight="bold")
+
+    n_features = len(corr_matrix)
+    cell_size = 0.55  # tamanho de cada célula em polegadas
+    fig_size = max(6, n_features * cell_size)
+
+    fig, ax = plt.subplots(figsize=(fig_size, fig_size))
+    sns.heatmap(
+        corr_matrix,
+        annot=True,
+        fmt=".2f",
+        cmap='coolwarm',
+        vmin=-1,
+        vmax=1,
+        square=True,
+        linewidths=0.5,
+        linecolor='white',
+        annot_kws={"size": 7, "weight": "bold"},
+        cbar_kws={"shrink": 0.8},
+        ax=ax,
+    )
+
+    # ── Ajustar cor do texto para alto contraste ──
+    # Valores extremos (azul/vermelho escuro) → texto branco
+    # Valores próximos de 0 (fundo claro)      → texto preto
+    for text_obj in ax.texts:
+        val = float(text_obj.get_text())
+        text_obj.set_color("white" if abs(val) > 0.45 else "black")
+
+    ax.set_title(
+        "Matriz de Correlação de Pearson entre as Features",
+        fontsize=14,
+        fontweight="bold",
+        pad=12,
+    )
     plt.tight_layout()
-    
+
     save_path = os.path.join(save_dir, "matriz_correlacao_features.png")
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"   Gráfico salvo em: {save_path}")

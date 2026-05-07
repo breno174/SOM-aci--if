@@ -21,9 +21,9 @@ from main.aco_analises import (
 )
 
 # ── Configurações fixas ────────────────────────────────────────────
-NUM_EPOCHS = 120  # épocas de treinamento
+NUM_EPOCHS = 100  # épocas de treinamento
 N_CLUSTERS = 5  # número de clusters K-Means (3 macro-classes: Ótimo, Normal, Ruim)
-K_BMU = 5  # número de BMUs para predição
+K_BMU = 3  # número de BMUs para predição
 SAVE_DIR = "src/acoPictures/multi"  # diretório para salvar gráficos
 EXPERIMENT_DIR = "src/experiments/multi"  # diretório para salvar experimentos
 
@@ -33,7 +33,7 @@ GRID_N_VALUES = [5, 7, 9]  # colunas do grid SOM
 LR_VALUES = [0.2, 0.3, 0.4, 0.5]  # taxa de aprendizado inicial
 SIGMA_VALUES = [3, 5, 7, 9]  # raio de vizinhança inicial
 NUM_RUNS_PER_TOPO = 5  # treinos independentes por topologia
-MAX_TOTAL_RUNS = 10  # limite máximo de treinos no total
+MAX_TOTAL_RUNS = 100  # limite máximo de treinos no total
 
 
 def generate_topologies():
@@ -76,13 +76,17 @@ def load_and_prepare_data():
 
     # remover colunas indesejadas + label
     cols_to_drop = [5, 12, 13, 0, 3, 6, 15, 16, 17, 18, 19, 22, 23]
+    all_cols = list(range(df.shape[1] - 1))  # excluindo label
+    valid_cols = [c for c in all_cols if c not in cols_to_drop]
+    feature_names = [f"F_{c}" for c in valid_cols]
+
     X = df.drop(df.columns[cols_to_drop + [-1]], axis=1).values.astype(float)
     print(f"   {X.shape[0]} amostras | dim={X.shape[1]}")
 
     # Normalizando os dados (Z-score)
     X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
 
-    return X, species_int, y_raw.values, species_names
+    return X, species_int, y_raw.values, species_names, feature_names
 
 
 def run_single_training(X, species_int, y_raw_values, seed, grid_m, grid_n, lr, sigma):
@@ -111,9 +115,16 @@ def run_single_training(X, species_int, y_raw_values, seed, grid_m, grid_n, lr, 
     #     X, species_int, y_raw_values, seed=seed
     # )
 
-    # 2. treinar SOM (sem imprimir épocas individuais)
+    # 2. treinar SOM com early stopping ativado
     som.train(
-        X_train, num_epoch=NUM_EPOCHS, X_test=X_test, y_train=y_train, y_test=y_test
+        X_train,
+        num_epoch=NUM_EPOCHS,
+        X_test=X_test,
+        y_train=y_train,
+        y_test=y_test,
+        early_stop=True,
+        stop_window=10,
+        stop_threshold=0.01,
     )
 
     # 3. Rotulação baseada em y_raw
@@ -169,6 +180,11 @@ def run_single_training(X, species_int, y_raw_values, seed, grid_m, grid_n, lr, 
         "som": som,
         "initial_weights": initial_weights_snapshot,
         "num_train_samples": len(X_train),
+        "y_test_raw": y_test_raw,
+        "y_pred_macro_test": y_pred_macro_test,
+        "y_pred_raw_test": y_pred_raw_test,
+        "y_test_macro": y_test,
+        "X_test": X_test,
     }
 
 
@@ -177,89 +193,209 @@ def plot_accuracy_comparison(
 ):
     """
     Gráfico 1: Acurácia média de treino vs teste por rodada,
-    com linha de média geral.
+    com linha de média geral e suavização por média móvel.
     """
     n_runs = len(all_results)
-    acc_trains = [r["acc_train"] for r in all_results]
-    acc_tests = [r["acc_test"] for r in all_results]
+    acc_trains = [r["acc_train"] * 100 for r in all_results]
+    acc_tests = [r["acc_test"] * 100 for r in all_results]
 
     x = np.arange(1, n_runs + 1)
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    # Tamanho fixo adequado para slides (aprox 16:9), sem alargar ao infinito
+    fig, ax = plt.subplots(figsize=(14, 6))
 
+    # Linhas originais mais claras (reduz o ruído visual, mas mantém a informação)
     ax.plot(
         x,
-        [a * 100 for a in acc_trains],
+        acc_trains,
         color="#2196F3",
-        linewidth=2,
-        marker="o",
-        markersize=6,
-        label="Acurácia Treino",
+        linewidth=1,
+        alpha=0.3,
+        linestyle="--",
     )
     ax.plot(
         x,
-        [a * 100 for a in acc_tests],
+        acc_tests,
         color="#F44336",
-        linewidth=2,
-        marker="s",
-        markersize=6,
-        label="Acurácia Teste",
+        linewidth=1,
+        alpha=0.3,
+        linestyle="--",
     )
 
-    mean_train = np.mean(acc_trains) * 100
-    mean_test = np.mean(acc_tests) * 100
+    # Média móvel (janela de 5)
+    window_size = 5 if n_runs >= 5 else 1
+    train_smooth = (
+        pd.Series(acc_trains).rolling(window=window_size, min_periods=1).mean()
+    )
+    test_smooth = pd.Series(acc_tests).rolling(window=window_size, min_periods=1).mean()
+
+    ax.plot(
+        x,
+        train_smooth,
+        color="#2196F3",
+        linewidth=2.5,
+        marker="o" if n_runs <= 20 else None,
+        markersize=6 if n_runs <= 20 else 0,
+        label=f"Treino (Média Móvel {window_size})" if window_size > 1 else "Treino",
+    )
+    ax.plot(
+        x,
+        test_smooth,
+        color="#F44336",
+        linewidth=2.5,
+        marker="s" if n_runs <= 20 else None,
+        markersize=6 if n_runs <= 20 else 0,
+        label=f"Teste (Média Móvel {window_size})" if window_size > 1 else "Teste",
+    )
+
+    mean_train = np.mean(acc_trains)
+    mean_test = np.mean(acc_tests)
 
     ax.axhline(
         y=mean_train,
         color="#2196F3",
-        linestyle="--",
-        linewidth=1.5,
-        alpha=0.6,
-        label=f"Média Treino ({mean_train:.2f}%)",
+        linestyle=":",
+        linewidth=2,
+        alpha=0.8,
+        label=f"Média Geral Treino ({mean_train:.2f}%)",
     )
     ax.axhline(
         y=mean_test,
         color="#F44336",
-        linestyle="--",
-        linewidth=1.5,
-        alpha=0.6,
-        label=f"Média Teste ({mean_test:.2f}%)",
+        linestyle=":",
+        linewidth=2,
+        alpha=0.8,
+        label=f"Média Geral Teste ({mean_test:.2f}%)",
     )
 
     ax.set_title(
-        f"Acurácia por Rodada — {n_runs} Treinos ({K_BMU}-BMU)",
-        fontsize=13,
+        f"Evolução da Acurácia por Rodada — {n_runs} Treinos ({K_BMU}-BMU)",
+        fontsize=14,
         fontweight="bold",
     )
-    ax.set_xlabel("Rodada", fontsize=11)
-    ax.set_ylabel("Acurácia (%)", fontsize=11)
+    ax.set_xlabel("Rodada", fontsize=12)
+    ax.set_ylabel("Acurácia (%)", fontsize=12)
 
     if x_labels is not None:
-        ax.set_xticks(x)
-        ax.set_xticklabels(x_labels, rotation=45, ha="right", fontsize=8)
+        if n_runs > 30:
+            # Mostrar menos rótulos para caber no slide sem poluir
+            step = max(1, n_runs // 20)
+            ax.set_xticks(x[::step])
+            ax.set_xticklabels(
+                [x_labels[i] for i in range(0, n_runs, step)],
+                rotation=45,
+                ha="right",
+                fontsize=9,
+            )
+        else:
+            ax.set_xticks(x)
+            rotation_angle = 90 if n_runs > 15 else 45
+            ha_align = "center" if n_runs > 15 else "right"
+            ax.set_xticklabels(
+                x_labels, rotation=rotation_angle, ha=ha_align, fontsize=9
+            )
     else:
         ax.set_xticks(x)
 
     ax.grid(True, linestyle="--", alpha=0.4)
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=10, loc="lower right")
 
     if topology_text:
         props = dict(boxstyle="round", facecolor="white", alpha=0.9, edgecolor="gray")
         ax.text(
-            1.02,
+            1.01,
             1.0,
             topology_text,
             transform=ax.transAxes,
-            fontsize=10,
+            fontsize=9,
             verticalalignment="top",
             bbox=props,
         )
-        plt.subplots_adjust(right=0.75)
+        plt.subplots_adjust(right=0.85)
     else:
         plt.tight_layout()
 
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     print(f"   Gráfico de acurácia salvo em: {save_path}")
+    plt.close(fig)
+
+
+def plot_sorted_accuracies(all_results, save_path, x_labels=None, custom_title=None):
+    """
+    Gráfico Extra: Gráfico de barras horizontais ordenado pela Acurácia de Teste.
+    Ideal para visualizar muitos treinos de uma vez.
+    """
+    n_runs = len(all_results)
+
+    # Agrupar dados
+    data = []
+    for i, r in enumerate(all_results):
+        label = x_labels[i] if x_labels else f"Rodada {i+1}"
+        data.append((r["acc_test"], r["acc_train"], label))
+
+    # Ordenar por acurácia de teste
+    data.sort(key=lambda x: x[0])
+
+    acc_tests = [d[0] * 100 for d in data]
+    acc_trains = [d[1] * 100 for d in data]
+    labels = [d[2] for d in data]
+
+    # Altura dinâmica para acomodar muitos resultados
+    fig_height = max(6, n_runs * 0.25)
+    fig, ax = plt.subplots(figsize=(10, fig_height))
+
+    y = np.arange(n_runs)
+    height = 0.4
+
+    ax.barh(y - height / 2, acc_trains, height, color="#2196F3", label="Treino")
+    ax.barh(y + height / 2, acc_tests, height, color="#F44336", label="Teste")
+
+    title_str = (
+        custom_title if custom_title else f"Ranking de Acurácia — {n_runs} Treinos"
+    )
+    ax.set_title(title_str, fontsize=13, fontweight="bold")
+    ax.set_xlabel("Acurácia (%)", fontsize=11)
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=8)
+
+    # Limitar x até um pouco mais que o máximo para caber o texto
+    max_acc = max(max(acc_tests), max(acc_trains))
+    ax.set_xlim(0, min(100 + 10, max_acc + 10))
+
+    # Adicionar textos nas barras de teste e treino
+    for i in range(n_runs):
+        val_test = acc_tests[i]
+        val_train = acc_trains[i]
+
+        # Texto para Teste
+        ax.text(
+            val_test + 0.5,
+            y[i] + height / 2,
+            f"{val_test:.1f}%",
+            va="center",
+            fontsize=7,
+            color="#F44336",
+            fontweight="bold",
+        )
+
+        # Texto para Treino
+        ax.text(
+            val_train + 0.5,
+            y[i] - height / 2,
+            f"{val_train:.1f}%",
+            va="center",
+            fontsize=7,
+            color="#2196F3",
+            fontweight="bold",
+        )
+
+    ax.grid(True, axis="x", linestyle="--", alpha=0.4)
+    ax.legend(fontsize=9, loc="lower right")
+
+    plt.tight_layout()
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    print(f"   Gráfico de ranking salvo em: {save_path}")
     plt.close(fig)
 
 
@@ -272,10 +408,14 @@ def plot_mse_comparison(all_results, save_path):
     n_runs = len(all_results)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-    epochs = list(range(1, len(all_results[0]["mse_train_history"]) + 1))
+    max_epochs = max(len(r["mse_train_history"]) for r in all_results)
+    epochs = list(range(1, max_epochs + 1))
 
     # ── Esquerda: EQM médio de TREINO ──
-    all_mse_train = np.array([r["mse_train_history"] for r in all_results])
+    raw_mse_train = [r["mse_train_history"] for r in all_results]
+    all_mse_train = np.array(
+        [np.pad(arr, (0, max_epochs - len(arr)), mode="edge") for arr in raw_mse_train]
+    )
     mean_train = np.mean(all_mse_train, axis=0)
     std_train = np.std(all_mse_train, axis=0)
 
@@ -307,7 +447,10 @@ def plot_mse_comparison(all_results, save_path):
     axes[0].legend(fontsize=9)
 
     # ── Direita: EQM médio de TESTE ──
-    all_mse_test = np.array([r["mse_test_history"] for r in all_results])
+    raw_mse_test = [r["mse_test_history"] for r in all_results]
+    all_mse_test = np.array(
+        [np.pad(arr, (0, max_epochs - len(arr)), mode="edge") for arr in raw_mse_test]
+    )
     mean_test = np.mean(all_mse_test, axis=0)
     std_test = np.std(all_mse_test, axis=0)
 
@@ -421,8 +564,17 @@ def plot_decay_comparison(all_results, save_path):
     """
     n_runs = len(all_results)
 
-    all_sigma = np.array([r["history_sigma"] for r in all_results])
-    all_lr = np.array([r["history_lr"] for r in all_results])
+    raw_sigma = [r["history_sigma"] for r in all_results]
+    max_len_sigma = max(len(arr) for arr in raw_sigma)
+    all_sigma = np.array(
+        [np.pad(arr, (0, max_len_sigma - len(arr)), mode="edge") for arr in raw_sigma]
+    )
+
+    raw_lr = [r["history_lr"] for r in all_results]
+    max_len_lr = max(len(arr) for arr in raw_lr)
+    all_lr = np.array(
+        [np.pad(arr, (0, max_len_lr - len(arr)), mode="edge") for arr in raw_lr]
+    )
 
     mean_sigma = np.mean(all_sigma, axis=0)
     std_sigma = np.std(all_sigma, axis=0)
@@ -492,13 +644,105 @@ def plot_decay_comparison(all_results, save_path):
     plt.close(fig)
 
 
+def plot_synoptic_map(som, species_names, save_path, title_suffix=""):
+    """
+    Gráfico: Mapa Sinótico — mostra a classe dominante de cada neurônio
+    no grid da SOM, colorido por macro-classe.
+    """
+    from matplotlib.colors import ListedColormap, BoundaryNorm
+
+    grid_m = som.line
+    grid_n = som.column
+    num_classes = len(species_names)
+
+    # Construir grid de macro-classes a partir dos rótulos raw do SOM
+    label_grid = np.full((grid_m, grid_n), -1, dtype=int)
+    for idx in range(som.num_neurons):
+        raw_label = som.neuron_majority_label.get(idx)
+        if raw_label is not None:
+            macro = convert_raw_to_macro([raw_label])[0]
+            row = idx // grid_n
+            col = idx % grid_n
+            label_grid[row, col] = macro
+
+    # Cores distintas: Ótimo=verde, Normal=azul, Ruim=vermelho, vazio=cinza
+    class_colors = ["#4CAF50", "#2196F3", "#F44336"]
+    empty_color = "#E0E0E0"
+
+    # Criar colormap com slot para -1 (vazio)
+    all_colors = [empty_color] + class_colors
+    cmap = ListedColormap(all_colors)
+    bounds = [-1.5, -0.5, 0.5, 1.5, 2.5]
+    norm = BoundaryNorm(bounds, cmap.N)
+
+    cell_size = 0.9
+    fig_w = max(5, grid_n * cell_size + 2)
+    fig_h = max(4, grid_m * cell_size + 1.5)
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    im = ax.imshow(label_grid, cmap=cmap, norm=norm, aspect="equal")
+
+    # Colorbar
+    cbar = fig.colorbar(im, ax=ax, ticks=list(range(num_classes)), shrink=0.8, pad=0.02)
+    cbar.ax.set_yticklabels(species_names, fontsize=9)
+
+    # Anotar cada neurônio com o nome da classe
+    for i in range(grid_m):
+        for j in range(grid_n):
+            lbl = label_grid[i, j]
+            if lbl >= 0:
+                text = species_names[lbl]
+                # Texto branco sobre fundo colorido
+                ax.text(
+                    j,
+                    i,
+                    text,
+                    ha="center",
+                    va="center",
+                    fontsize=7,
+                    fontweight="bold",
+                    color="white",
+                )
+            else:
+                ax.text(
+                    j,
+                    i,
+                    "—",
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color="#999999",
+                )
+
+    # Linhas de grade
+    ax.set_xticks(np.arange(-0.5, grid_n, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, grid_m, 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=1.5)
+    ax.tick_params(which="minor", size=0)
+
+    ax.set_xticks(range(grid_n))
+    ax.set_yticks(range(grid_m))
+    ax.set_xlabel("Coluna", fontsize=11)
+    ax.set_ylabel("Linha", fontsize=11)
+
+    title = f"Mapa Sinótico — Classe Dominante por Neurônio"
+    if title_suffix:
+        title += f"\n{title_suffix}"
+    ax.set_title(title, fontsize=13, fontweight="bold")
+
+    plt.tight_layout()
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    print(f"   Mapa sinótico salvo em: {save_path}")
+    plt.close(fig)
+
+
 def main():
     os.makedirs(SAVE_DIR, exist_ok=True)
     os.makedirs(EXPERIMENT_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Carregar dados uma vez
-    X, species_int, y_raw_values, species_names = load_and_prepare_data()
+    X, species_int, y_raw_values, species_names, feature_names = load_and_prepare_data()
 
     # ── Gerar topologias ───────────────────────────────────────────
     topologies = generate_topologies()
@@ -604,12 +848,19 @@ def main():
         std_acc_train = float(np.std(acc_trains))
         std_acc_test = float(np.std(acc_tests))
 
+        mean_final_lr = float(np.mean([r["history_lr"][-1] for r in topo_results]))
+        mean_final_sigma = float(
+            np.mean([r["history_sigma"][-1] for r in topo_results])
+        )
+
         topo_summary = {
             "topology_index": topo_idx + 1,
             "grid_m": grid_m,
             "grid_n": grid_n,
             "lr": lr,
             "sigma": sigma,
+            "final_lr": mean_final_lr,
+            "final_sigma": mean_final_sigma,
             "num_runs": NUM_RUNS_PER_TOPO,
             "mean_acc_train": mean_acc_train,
             "std_acc_train": std_acc_train,
@@ -642,8 +893,10 @@ def main():
     print(f"\n  🏆 MELHOR TOPOLOGIA (por acurácia média de teste):")
     print(f"     Topologia #{best['topology_index']}")
     print(f"     GRID = {best['grid_m']}×{best['grid_n']}")
-    print(f"     LR   = {best['lr']}")
-    print(f"     SIGMA = {best['sigma']}")
+    print(f"     LR (Inicial -> Final) = {best['lr']} -> {best['final_lr']:.4f}")
+    print(
+        f"     SIGMA (Inicial -> Final) = {best['sigma']} -> {best['final_sigma']:.4f}"
+    )
     print(
         f"     Acc Teste Média:  {best['mean_acc_test']*100:.2f}% ± {best['std_acc_test']*100:.2f}%"
     )
@@ -698,6 +951,31 @@ def main():
         x_labels=x_labels_multi,
     )
 
+    # 1.5 Gráfico de barras ordenado para visualizar ranking de todas as rodadas
+    if len(all_results) > 1:
+        plot_sorted_accuracies(
+            all_results,
+            save_path=f"{SAVE_DIR}/multi_accuracy_ranking_{timestamp}.png",
+            x_labels=x_labels_multi,
+        )
+
+    # 1.6 Gráfico de barras ordenado (apenas Top 5 Geral)
+    if len(all_results) >= 5:
+        # Criar pares de (resultado, label_correspondente) e ordenar
+        paired_results = list(zip(all_results, x_labels_multi))
+        paired_results.sort(key=lambda item: item[0]["acc_test"], reverse=True)
+        top5_pairs = paired_results[:5]
+
+        top5_results = [p[0] for p in top5_pairs]
+        top5_labels = [p[1] for p in top5_pairs]
+
+        plot_sorted_accuracies(
+            top5_results,
+            save_path=f"{SAVE_DIR}/top5_accuracy_ranking_{timestamp}.png",
+            x_labels=top5_labels,
+            custom_title="Ranking de Acurácia — Top 5 Melhores Treinos",
+        )
+
     # 2. EQM: média de treino e teste
     plot_mse_comparison(
         all_results,
@@ -741,6 +1019,13 @@ def main():
         x_labels=x_labels_best,
     )
 
+    if len(best_results) > 1:
+        plot_sorted_accuracies(
+            best_results,
+            save_path=f"{SAVE_DIR}/best_topo_accuracy_ranking_{timestamp}.png",
+            x_labels=x_labels_best,
+        )
+
     # 2. EQM: média de treino e teste
     plot_mse_comparison(
         best_results,
@@ -770,6 +1055,139 @@ def main():
         best_results,
         save_path=f"{SAVE_DIR}/best_topo_decay_{timestamp}.png",
     )
+
+    # 5. Mapa sinótico da melhor rodada
+    best_som = best_single_run["som"]
+    plot_synoptic_map(
+        best_som,
+        species_names,
+        save_path=f"{SAVE_DIR}/best_topo_synoptic_map_{timestamp}.png",
+        title_suffix=f"Rodada {best_run_idx} da T{best['topology_index']} "
+        f"(Grid {best['grid_m']}×{best['grid_n']})",
+    )
+
+    # 5b. Matriz de confusão + Mapa sinótico INDIVIDUAL para CADA rodada da melhor topologia
+    print(f"\n[GRÁFICOS] Gerando visualizações individuais por rodada ({len(best_results)} rodadas)...")
+    for run_result in best_results:
+        ridx = run_result["run_idx"]
+
+        # Matriz de confusão individual
+        plot_confusion_matrix_mean(
+            [run_result],
+            species_names,
+            save_path=f"{SAVE_DIR}/best_topo_R{ridx}_confusion_matrix_{timestamp}.png",
+            custom_title_prefix=f"Matriz de Confusão — Rodada {ridx}",
+            subtitle_suffix=(
+                f"T{best['topology_index']} R{ridx} "
+                f"(Treino: {run_result['acc_train']:.2%}, Teste: {run_result['acc_test']:.2%})"
+            ),
+        )
+
+        # Mapa sinótico individual
+        plot_synoptic_map(
+            run_result["som"],
+            species_names,
+            save_path=f"{SAVE_DIR}/best_topo_R{ridx}_synoptic_map_{timestamp}.png",
+            title_suffix=f"T{best['topology_index']} Rodada {ridx} "
+            f"(Grid {best['grid_m']}×{best['grid_n']})",
+        )
+
+    # 6. Análise de erros da MELHOR RODADA: Ruim classificadas como Ótimo
+    print(f"\n{'='*60}")
+    print(f"  ANÁLISE DE ERROS — Melhor Rodada (R{best_run_idx})")
+    print(f"{'='*60}")
+
+    y_true_raw_best = best_single_run["y_test_raw"]
+    y_true_macro_best = best_single_run["y_test_macro"]
+    y_pred_macro_best = best_single_run["y_pred_macro_test"]
+    y_pred_raw_best = best_single_run["y_pred_raw_test"]
+
+    mask_best = (y_true_macro_best == 2) & (y_pred_macro_best == 0)
+    misclass_best = np.where(mask_best)[0]
+
+    best_run_records = []
+    if len(misclass_best) == 0:
+        print("  ✅ Nenhuma amostra Ruim foi classificada como Ótimo.")
+    else:
+        print(f"  ⚠️  {len(misclass_best)} amostra(s) Ruim → Ótimo:")
+        for idx in misclass_best:
+            true_raw = y_true_raw_best[idx]
+            pred_raw = y_pred_raw_best[idx]
+            print(f"     - Amostra real: {true_raw} → Predita como: {pred_raw}")
+            record = {
+                "rodada": best_run_idx,
+                "acc_teste": f"{best_single_run['acc_test']:.2%}",
+                "amostra_real_raw": true_raw,
+                "pred_raw": pred_raw,
+                "classe_real": "Ruim",
+                "classe_pred": "Ótimo",
+            }
+            # Adicionar colunas de features
+            sample_values = best_single_run["X_test"][idx]
+            for fname, fval in zip(feature_names, sample_values):
+                record[fname] = fval
+            best_run_records.append(record)
+
+    analises_dir = "aco_analises"
+    os.makedirs(analises_dir, exist_ok=True)
+
+    if best_run_records:
+        best_run_misclass_df = pd.DataFrame(best_run_records)
+        best_run_csv = f"{analises_dir}/best_run_ruim_como_otimo_{timestamp}.csv"
+        best_run_misclass_df.to_csv(best_run_csv, index=False, encoding="utf-8-sig")
+        print(f"\n   📄 Detalhes da melhor rodada salvos em: {best_run_csv}")
+
+    # 7. Análise de erros: amostras Ruim classificadas como Ótimo (top 5 rodadas)
+    print(f"\n{'='*60}")
+    print("  ANÁLISE DE ERROS — Amostras 'Ruim' classificadas como 'Ótimo'")
+    print(f"{'='*60}")
+
+    top5_runs = sorted(best_results, key=lambda r: r["acc_test"], reverse=True)[:5]
+    all_misclass_records = []
+
+    for rank, run in enumerate(top5_runs, 1):
+        run_idx = run["run_idx"]
+        y_true_raw = run["y_test_raw"]
+        y_true_macro = run["y_test_macro"]
+        y_pred_macro = run["y_pred_macro_test"]
+        y_pred_raw = run["y_pred_raw_test"]
+
+        # Índices onde verdadeiro=Ruim(2) e predito=Ótimo(0)
+        mask = (y_true_macro == 2) & (y_pred_macro == 0)
+        misclass_indices = np.where(mask)[0]
+
+        print(f"\n  #{rank} Rodada {run_idx} (Acc Teste: {run['acc_test']:.2%})")
+
+        if len(misclass_indices) == 0:
+            print("     ✅ Nenhuma amostra Ruim foi classificada como Ótimo.")
+        else:
+            print(f"     ⚠️  {len(misclass_indices)} amostra(s) Ruim → Ótimo:")
+            for idx in misclass_indices:
+                true_raw = y_true_raw[idx]
+                pred_raw = y_pred_raw[idx]
+                print(f"        - Amostra real: {true_raw} → Predita como: {pred_raw}")
+                record = {
+                    "rodada": run_idx,
+                    "acc_teste": f"{run['acc_test']:.2%}",
+                    "amostra_real_raw": true_raw,
+                    "pred_raw": pred_raw,
+                    "classe_real": "Ruim",
+                    "classe_pred": "Ótimo",
+                }
+                # Adicionar colunas de features
+                sample_values = run["X_test"][idx]
+                for fname, fval in zip(feature_names, sample_values):
+                    record[fname] = fval
+                all_misclass_records.append(record)
+
+    # Salvar CSV com os erros
+    if all_misclass_records:
+        misclass_df = pd.DataFrame(all_misclass_records)
+        misclass_csv = f"{analises_dir}/best_topo_ruim_como_otimo_{timestamp}.csv"
+        misclass_df.to_csv(misclass_csv, index=False, encoding="utf-8-sig")
+        print(f"\n   📄 Detalhes salvos em: {misclass_csv}")
+    else:
+        print("\n   ✅ Nenhum erro Ruim→Ótimo encontrado nas top 5 rodadas.")
 
     print("\n✅ Busca de topologias concluída com sucesso!")
 

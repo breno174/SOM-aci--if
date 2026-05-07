@@ -219,14 +219,35 @@ class SOM:
 
         return correct / len(y_test)
 
-    def train(self, X_train, num_epoch=100, X_test=None, y_train=None, y_test=None):
+    def _is_stable(self, mse_history, window=10, threshold=0.01):
+        """
+        Verifica se o EQM (Erro Quadrático Médio) estabilizou.
+        Calcula a variação relativa entre a média do erro das últimas 'window' épocas
+        e a média das 'window' épocas anteriores a essas.
+        """
+        if len(mse_history) < 2 * window:
+            return False
+        
+        recent = np.mean(mse_history[-window:])
+        previous = np.mean(mse_history[-2*window:-window])
+        
+        if previous == 0:
+            return False
+            
+        relative_change = abs(recent - previous) / previous
+        
+        return relative_change < threshold
+
+    def train(self, X_train, num_epoch=100, X_test=None, y_train=None, y_test=None, early_stop=False, stop_window=10, stop_threshold=0.01):
         """
         Treina a SOM por num_epochs épocas.
         Args:
-            data: array de dados de entrada (sem labels).
-            num_epochs: número de épocas de treinamento.
-            labeled_data: tupla (X, y) com dados e seus verdadeiros labels para
-                          calcular a acurácia ao final de cada época. Opcional.
+            X_train: array de dados de entrada de treino.
+            num_epochs: número máximo de épocas de treinamento.
+            X_test, y_train, y_test: opcionais para calcular a acurácia.
+            early_stop: ativa parada antecipada se o EQM estabilizar.
+            stop_window: tamanho da janela para calcular média móvel do EQM.
+            stop_threshold: limiar de variação relativa para estabilização.
         """
 
         num_sample = X_train.shape[0]
@@ -279,6 +300,11 @@ class SOM:
                     f"LR={epoch_lr:.4f} | sigma={epoch_sigma:.4f} | "
                     f"MSE={mse:.4f}"
                 )
+
+            # 🔹 Verificação de Early Stopping
+            if early_stop and self._is_stable(self.history_mse, window=stop_window, threshold=stop_threshold):
+                print(f"   [!] Treinamento interrompido antecipadamente na época {epoch+1}: EQM estabilizou.")
+                break
 
     def compute_confusion_matrix(self, data, true_labels, num_classes):
         """

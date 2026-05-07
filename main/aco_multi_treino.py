@@ -1067,7 +1067,9 @@ def main():
     )
 
     # 5b. Matriz de confusão + Mapa sinótico INDIVIDUAL para CADA rodada da melhor topologia
-    print(f"\n[GRÁFICOS] Gerando visualizações individuais por rodada ({len(best_results)} rodadas)...")
+    print(
+        f"\n[GRÁFICOS] Gerando visualizações individuais por rodada ({len(best_results)} rodadas)..."
+    )
     for run_result in best_results:
         ridx = run_result["run_idx"]
 
@@ -1094,7 +1096,9 @@ def main():
 
     # 6. Análise de erros da MELHOR RODADA: Ruim classificadas como Ótimo
     print(f"\n{'='*60}")
-    print(f"  ANÁLISE DE ERROS — Melhor Rodada (R{best_run_idx})")
+    print(
+        f"  ANÁLISE DE ERROS — Melhor Rodada (T{best_single_run['topo_idx']} R{best_run_idx})"
+    )
     print(f"{'='*60}")
 
     y_true_raw_best = best_single_run["y_test_raw"]
@@ -1115,6 +1119,7 @@ def main():
             pred_raw = y_pred_raw_best[idx]
             print(f"     - Amostra real: {true_raw} → Predita como: {pred_raw}")
             record = {
+                "topologia": best_single_run["topo_idx"],
                 "rodada": best_run_idx,
                 "acc_teste": f"{best_single_run['acc_test']:.2%}",
                 "amostra_real_raw": true_raw,
@@ -1156,7 +1161,9 @@ def main():
         mask = (y_true_macro == 2) & (y_pred_macro == 0)
         misclass_indices = np.where(mask)[0]
 
-        print(f"\n  #{rank} Rodada {run_idx} (Acc Teste: {run['acc_test']:.2%})")
+        print(
+            f"\n  #{rank} Topologia {run['topo_idx']} Rodada {run_idx} (Acc Teste: {run['acc_test']:.2%})"
+        )
 
         if len(misclass_indices) == 0:
             print("     ✅ Nenhuma amostra Ruim foi classificada como Ótimo.")
@@ -1167,6 +1174,7 @@ def main():
                 pred_raw = y_pred_raw[idx]
                 print(f"        - Amostra real: {true_raw} → Predita como: {pred_raw}")
                 record = {
+                    "topologia": run["topo_idx"],
                     "rodada": run_idx,
                     "acc_teste": f"{run['acc_test']:.2%}",
                     "amostra_real_raw": true_raw,

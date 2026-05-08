@@ -28,12 +28,12 @@ SAVE_DIR = "src/acoPictures/multi"  # diretório para salvar gráficos
 EXPERIMENT_DIR = "src/experiments/multi"  # diretório para salvar experimentos
 
 # ── Ranges para busca de topologia ─────────────────────────────────
-GRID_M_VALUES = [5, 7, 9]  # linhas do grid SOM
-GRID_N_VALUES = [5, 7, 9]  # colunas do grid SOM
+GRID_M_VALUES = [5]  # linhas do grid SOM
+GRID_N_VALUES = [5]  # colunas do grid SOM
 LR_VALUES = [0.2, 0.3, 0.4, 0.5]  # taxa de aprendizado inicial
 SIGMA_VALUES = [3, 5, 7, 9]  # raio de vizinhança inicial
-NUM_RUNS_PER_TOPO = 5  # treinos independentes por topologia
-MAX_TOTAL_RUNS = 100  # limite máximo de treinos no total
+NUM_RUNS_PER_TOPO = 3  # treinos independentes por topologia
+MAX_TOTAL_RUNS = 12  # limite máximo de treinos no total
 
 
 def generate_topologies():
@@ -75,7 +75,7 @@ def load_and_prepare_data():
     print(f"   Distribuição: {dict(zip(*np.unique(species_int, return_counts=True)))}")
 
     # remover colunas indesejadas + label
-    cols_to_drop = [5, 12, 13, 0, 3, 6, 15, 16, 17, 18, 19, 22, 23]
+    cols_to_drop = [5, 12, 13, 0, 3, 6, 14, 15, 16, 17, 18, 19, 22, 23]
     all_cols = list(range(df.shape[1] - 1))  # excluindo label
     valid_cols = [c for c in all_cols if c not in cols_to_drop]
     feature_names = [f"F_{c}" for c in valid_cols]
@@ -192,8 +192,8 @@ def plot_accuracy_comparison(
     all_results, species_names, save_path, topology_text=None, x_labels=None
 ):
     """
-    Gráfico 1: Acurácia média de treino vs teste por rodada,
-    com linha de média geral e suavização por média móvel.
+    Gráfico 1: Acurácia de treino vs teste por realização,
+    com linha de média móvel contínua entre as topologias.
     """
     n_runs = len(all_results)
     acc_trains = [r["acc_train"] * 100 for r in all_results]
@@ -204,49 +204,143 @@ def plot_accuracy_comparison(
     # Tamanho fixo adequado para slides (aprox 16:9), sem alargar ao infinito
     fig, ax = plt.subplots(figsize=(14, 6))
 
-    # Linhas originais mais claras (reduz o ruído visual, mas mantém a informação)
-    ax.plot(
-        x,
-        acc_trains,
-        color="#2196F3",
-        linewidth=1,
-        alpha=0.3,
-        linestyle="--",
-    )
-    ax.plot(
-        x,
-        acc_tests,
-        color="#F44336",
-        linewidth=1,
-        alpha=0.3,
-        linestyle="--",
-    )
+    # Agrupar os resultados por topologia para calcular a média móvel
+    topo_indices = {}
+    for i, r in enumerate(all_results):
+        t_idx = r.get("topo_idx", i)
+        if t_idx not in topo_indices:
+            topo_indices[t_idx] = []
+        topo_indices[t_idx].append(i)
 
-    # Média móvel (janela de 5)
-    window_size = 5 if n_runs >= 5 else 1
-    train_smooth = (
-        pd.Series(acc_trains).rolling(window=window_size, min_periods=1).mean()
-    )
-    test_smooth = pd.Series(acc_tests).rolling(window=window_size, min_periods=1).mean()
+    num_topos = len(topo_indices)
 
-    ax.plot(
-        x,
-        train_smooth,
-        color="#2196F3",
-        linewidth=2.5,
-        marker="o" if n_runs <= 20 else None,
-        markersize=6 if n_runs <= 20 else 0,
-        label=f"Treino (Média Móvel {window_size})" if window_size > 1 else "Treino",
-    )
-    ax.plot(
-        x,
-        test_smooth,
-        color="#F44336",
-        linewidth=2.5,
-        marker="s" if n_runs <= 20 else None,
-        markersize=6 if n_runs <= 20 else 0,
-        label=f"Teste (Média Móvel {window_size})" if window_size > 1 else "Teste",
-    )
+    if num_topos > 1:
+        # Média móvel (rolling) ao longo de todas as realizações sequenciais.
+        # A janela é o número de treinos por topologia para suavizar dentro de cada bloco.
+        window_size = max(2, len(list(topo_indices.values())[0]))
+
+        train_ma = pd.Series(acc_trains).rolling(window=window_size, min_periods=1).mean()
+        test_ma = pd.Series(acc_tests).rolling(window=window_size, min_periods=1).mean()
+
+        # Amostrar o valor da média móvel no último treino de cada topologia
+        topo_keys = list(topo_indices.keys())
+        ma_train_vals = []
+        ma_test_vals = []
+        topo_labels = []
+
+        for t_idx in topo_keys:
+            indices = topo_indices[t_idx]
+            last_i = indices[-1]  # último treino da topologia
+            ma_train_vals.append(train_ma.iloc[last_i])
+            ma_test_vals.append(test_ma.iloc[last_i])
+            # Buscar label da topologia a partir dos x_labels ou gerar
+            if x_labels is not None:
+                topo_labels.append(x_labels[indices[0]].split("-")[0])  # ex: "T1"
+            else:
+                topo_labels.append(f"T{t_idx}")
+
+        # Eixo X sequencial: 1, 2, 3, ..., num_topos
+        x_topo = np.arange(1, num_topos + 1)
+
+        ax.plot(
+            x_topo,
+            ma_train_vals,
+            color="#0D47A1",
+            linewidth=2.5,
+            marker="o",
+            markersize=5,
+            label=f"Treino (Média Móvel w={window_size})",
+        )
+        ax.plot(
+            x_topo,
+            ma_test_vals,
+            color="#B71C1C",
+            linewidth=2.5,
+            marker="s",
+            markersize=5,
+            label=f"Teste (Média Móvel w={window_size})",
+        )
+
+        # Adicionar textos sobre os pontos das médias móveis
+        if num_topos <= 200:
+            for i in range(num_topos):
+                val_train = ma_train_vals[i]
+                val_test = ma_test_vals[i]
+
+                ax.text(
+                    x_topo[i],
+                    val_train - 1.5,
+                    f"{val_train:.1f}%",
+                    color="#0D47A1",
+                    fontsize=7,
+                    ha="center",
+                    va="top",
+                    fontweight="bold",
+                    alpha=0.9,
+                )
+                ax.text(
+                    x_topo[i],
+                    val_test + 1.5,
+                    f"{val_test:.1f}%",
+                    color="#B71C1C",
+                    fontsize=7,
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                    alpha=0.9,
+                )
+
+        # Configurar eixo X com labels de topologia
+        ax.set_xticks(x_topo)
+        rotation_angle = 90 if num_topos > 15 else (45 if num_topos > 8 else 0)
+        ha_align = "center" if rotation_angle == 0 else "right"
+        ax.set_xticklabels(topo_labels, rotation=rotation_angle, ha=ha_align, fontsize=9)
+
+    else:
+        # Se for apenas 1 topologia (ex: best_results), mostramos os valores reais de cada treino
+        ax.plot(
+            x,
+            acc_trains,
+            color="#2196F3",
+            linewidth=2,
+            marker="o",
+            markersize=5,
+            label="Treino (Real)",
+        )
+        ax.plot(
+            x,
+            acc_tests,
+            color="#F44336",
+            linewidth=2,
+            marker="s",
+            markersize=5,
+            label="Teste (Real)",
+        )
+
+        if n_runs <= 30:
+            for i in range(n_runs):
+                ax.text(
+                    x[i],
+                    acc_trains[i] - 1.0,
+                    f"{acc_trains[i]:.1f}%",
+                    color="#2196F3",
+                    fontsize=7,
+                    ha="center",
+                    va="top",
+                    fontweight="bold",
+                )
+                ax.text(
+                    x[i],
+                    acc_tests[i] + 1.0,
+                    f"{acc_tests[i]:.1f}%",
+                    color="#F44336",
+                    fontsize=7,
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                )
+
+        ax.set_xticks(x)
 
     mean_train = np.mean(acc_trains)
     mean_test = np.mean(acc_tests)
@@ -269,33 +363,17 @@ def plot_accuracy_comparison(
     )
 
     ax.set_title(
-        f"Evolução da Acurácia por Rodada — {n_runs} Treinos ({K_BMU}-BMU)",
+        f"Evolução da Acurácia por Realização — {n_runs} Treinos ({K_BMU}-BMU)",
         fontsize=14,
         fontweight="bold",
     )
-    ax.set_xlabel("Rodada", fontsize=12)
+    ax.set_xlabel("Topologia", fontsize=12)
     ax.set_ylabel("Acurácia (%)", fontsize=12)
 
-    if x_labels is not None:
-        if n_runs > 30:
-            # Mostrar menos rótulos para caber no slide sem poluir
-            step = max(1, n_runs // 20)
-            ax.set_xticks(x[::step])
-            ax.set_xticklabels(
-                [x_labels[i] for i in range(0, n_runs, step)],
-                rotation=45,
-                ha="right",
-                fontsize=9,
-            )
-        else:
-            ax.set_xticks(x)
-            rotation_angle = 90 if n_runs > 15 else 45
-            ha_align = "center" if n_runs > 15 else "right"
-            ax.set_xticklabels(
-                x_labels, rotation=rotation_angle, ha=ha_align, fontsize=9
-            )
-    else:
-        ax.set_xticks(x)
+    # Ajustar limites do Y para os textos não cortarem
+    y_min = min(min(acc_trains), min(acc_tests), mean_train, mean_test)
+    y_max = max(max(acc_trains), max(acc_tests), mean_train, mean_test)
+    ax.set_ylim(max(0, y_min - 4), min(100, y_max + 4))
 
     ax.grid(True, linestyle="--", alpha=0.4)
     ax.legend(fontsize=10, loc="lower right")
@@ -330,7 +408,7 @@ def plot_sorted_accuracies(all_results, save_path, x_labels=None, custom_title=N
     # Agrupar dados
     data = []
     for i, r in enumerate(all_results):
-        label = x_labels[i] if x_labels else f"Rodada {i+1}"
+        label = x_labels[i] if x_labels else f"Realização {i+1}"
         data.append((r["acc_test"], r["acc_train"], label))
 
     # Ordenar por acurácia de teste
@@ -402,8 +480,8 @@ def plot_sorted_accuracies(all_results, save_path, x_labels=None, custom_title=N
 def plot_mse_comparison(all_results, save_path):
     """
     Gráfico 2: Dois subplots lado a lado.
-    - Esquerda: EQM médio por época de TREINO (média de todas as rodadas).
-    - Direita: EQM médio por época de TESTE (média de todas as rodadas).
+    - Esquerda: EQM médio por época de TREINO (média de todas as realizações).
+    - Direita: EQM médio por época de TESTE (média de todas as realizações).
     """
     n_runs = len(all_results)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -426,7 +504,7 @@ def plot_mse_comparison(all_results, save_path):
         linewidth=2,
         marker="o",
         markersize=3,
-        label=f"EQM Treino (média de {n_runs} rodadas)",
+        label=f"EQM Treino (média de {n_runs} realizações)",
     )
     axes[0].fill_between(
         epochs,
@@ -437,7 +515,7 @@ def plot_mse_comparison(all_results, save_path):
         label="± 1 Desvio Padrão",
     )
     axes[0].set_title(
-        f"Evolução do EQM de Treino (média de {n_runs} rodadas)",
+        f"Evolução do EQM de Treino (média de {n_runs} realizações)",
         fontsize=12,
         fontweight="bold",
     )
@@ -461,7 +539,7 @@ def plot_mse_comparison(all_results, save_path):
         linewidth=2,
         marker="s",
         markersize=3,
-        label=f"EQM Teste (média de {n_runs} rodadas)",
+        label=f"EQM Teste (média de {n_runs} realizações)",
     )
     axes[1].fill_between(
         epochs,
@@ -472,7 +550,7 @@ def plot_mse_comparison(all_results, save_path):
         label="± 1 Desvio Padrão",
     )
     axes[1].set_title(
-        f"Evolução do EQM de Teste (média de {n_runs} rodadas)",
+        f"Evolução do EQM de Teste (média de {n_runs} realizações)",
         fontsize=12,
         fontweight="bold",
     )
@@ -529,7 +607,7 @@ def plot_confusion_matrix_mean(
         ax.set_yticklabels(species_names, fontsize=10)
         ax.set_xlabel("Predito", fontsize=11)
         ax.set_ylabel("Real", fontsize=11)
-        subtitle = subtitle_suffix if subtitle_suffix else f"{n_runs} rodadas"
+        subtitle = subtitle_suffix if subtitle_suffix else f"{n_runs} realizações"
         ax.set_title(
             f"{title}\n{subtitle} (Acc={acc:.2%})",
             fontsize=12,
@@ -560,7 +638,7 @@ def plot_confusion_matrix_mean(
 def plot_decay_comparison(all_results, save_path):
     """
     Gráfico 4: Decaimento médio do raio de vizinhança (σ) e da taxa de
-    aprendizado (α) ao longo das épocas, considerando todas as rodadas.
+    aprendizado (α) ao longo das épocas, considerando todas as realizações.
     """
     n_runs = len(all_results)
 
@@ -585,7 +663,7 @@ def plot_decay_comparison(all_results, save_path):
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     fig.suptitle(
-        f"Decaimento dos Parâmetros da SOM (média de {n_runs} rodadas)",
+        f"Decaimento dos Parâmetros da SOM (média de {n_runs} realizações)",
         fontsize=13,
         fontweight="bold",
     )
@@ -598,7 +676,7 @@ def plot_decay_comparison(all_results, save_path):
         linewidth=2,
         marker="o",
         markersize=3,
-        label=f"σ médio ({n_runs} rodadas)",
+        label=f"σ médio ({n_runs} realizações)",
     )
     axes[0].fill_between(
         epochs,
@@ -622,7 +700,7 @@ def plot_decay_comparison(all_results, save_path):
         linewidth=2,
         marker="o",
         markersize=3,
-        label=f"α médio ({n_runs} rodadas)",
+        label=f"α médio ({n_runs} realizações)",
     )
     axes[1].fill_between(
         epochs,
@@ -764,7 +842,7 @@ def main():
     # Armazena resumo de cada topologia
     topo_summaries = []  # lista de dicts com topologia + métricas médias
     all_topo_results = {}  # dict: topo_idx -> lista de results (para gráficos)
-    global_run = 0  # contador global de rodadas
+    global_run = 0  # contador global de realizações
 
     best_topo_idx = -1
     best_mean_acc_test = -1.0
@@ -787,7 +865,7 @@ def main():
             seed = 42 + run
             print(f"\n{'='*60}")
             print(
-                f"  Topo {topo_idx+1} — Rodada {run+1}/{NUM_RUNS_PER_TOPO}  (seed={seed})"
+                f"  Topo {topo_idx+1} — Realização {run+1}/{NUM_RUNS_PER_TOPO}  (seed={seed})"
             )
             print(f"{'='*60}")
 
@@ -1038,7 +1116,7 @@ def main():
     )
     best_run_idx = best_single_run["run_idx"]
     print(
-        f"   A melhor rodada da melhor topologia foi a Rodada {best_run_idx} "
+        f"   A melhor realização da melhor topologia foi a Realização {best_run_idx} "
         f"(Treino: {best_single_run['acc_train']:.2%}, Teste: {best_single_run['acc_test']:.2%})"
     )
 
@@ -1046,8 +1124,8 @@ def main():
         [best_single_run],
         species_names,
         save_path=f"{SAVE_DIR}/best_topo_best_run_confusion_matrix_{timestamp}.png",
-        custom_title_prefix="Matriz de Confusão da Melhor Rodada",
-        subtitle_suffix=f"Rodada {best_run_idx} da T{best['topology_index']}",
+        custom_title_prefix="Matriz de Confusão da Melhor Realização",
+        subtitle_suffix=f"Realização {best_run_idx} da T{best['topology_index']}",
     )
 
     # 4. Decaimento médio de sigma e learning rate
@@ -1062,13 +1140,13 @@ def main():
         best_som,
         species_names,
         save_path=f"{SAVE_DIR}/best_topo_synoptic_map_{timestamp}.png",
-        title_suffix=f"Rodada {best_run_idx} da T{best['topology_index']} "
+        title_suffix=f"Realização {best_run_idx} da T{best['topology_index']} "
         f"(Grid {best['grid_m']}×{best['grid_n']})",
     )
 
     # 5b. Matriz de confusão + Mapa sinótico INDIVIDUAL para CADA rodada da melhor topologia
     print(
-        f"\n[GRÁFICOS] Gerando visualizações individuais por rodada ({len(best_results)} rodadas)..."
+        f"\n[GRÁFICOS] Gerando visualizações individuais por realização ({len(best_results)} realizações)..."
     )
     for run_result in best_results:
         ridx = run_result["run_idx"]
@@ -1078,7 +1156,7 @@ def main():
             [run_result],
             species_names,
             save_path=f"{SAVE_DIR}/best_topo_R{ridx}_confusion_matrix_{timestamp}.png",
-            custom_title_prefix=f"Matriz de Confusão — Rodada {ridx}",
+            custom_title_prefix=f"Matriz de Confusão — Realização {ridx}",
             subtitle_suffix=(
                 f"T{best['topology_index']} R{ridx} "
                 f"(Treino: {run_result['acc_train']:.2%}, Teste: {run_result['acc_test']:.2%})"
@@ -1090,14 +1168,14 @@ def main():
             run_result["som"],
             species_names,
             save_path=f"{SAVE_DIR}/best_topo_R{ridx}_synoptic_map_{timestamp}.png",
-            title_suffix=f"T{best['topology_index']} Rodada {ridx} "
+            title_suffix=f"T{best['topology_index']} Realização {ridx} "
             f"(Grid {best['grid_m']}×{best['grid_n']})",
         )
 
     # 6. Análise de erros da MELHOR RODADA: Ruim classificadas como Ótimo
     print(f"\n{'='*60}")
     print(
-        f"  ANÁLISE DE ERROS — Melhor Rodada (T{best_single_run['topo_idx']} R{best_run_idx})"
+        f"  ANÁLISE DE ERROS — Melhor Realização (T{best_single_run['topo_idx']} R{best_run_idx})"
     )
     print(f"{'='*60}")
 
@@ -1120,7 +1198,7 @@ def main():
             print(f"     - Amostra real: {true_raw} → Predita como: {pred_raw}")
             record = {
                 "topologia": best_single_run["topo_idx"],
-                "rodada": best_run_idx,
+                "realização": best_run_idx,
                 "acc_teste": f"{best_single_run['acc_test']:.2%}",
                 "amostra_real_raw": true_raw,
                 "pred_raw": pred_raw,
@@ -1140,11 +1218,13 @@ def main():
         best_run_misclass_df = pd.DataFrame(best_run_records)
         best_run_csv = f"{analises_dir}/best_run_ruim_como_otimo_{timestamp}.csv"
         best_run_misclass_df.to_csv(best_run_csv, index=False, encoding="utf-8-sig")
-        print(f"\n   📄 Detalhes da melhor rodada salvos em: {best_run_csv}")
+        print(f"\n   📄 Detalhes da melhor realização salvos em: {best_run_csv}")
 
-    # 7. Análise de erros: amostras Ruim classificadas como Ótimo (top 5 rodadas)
+    # 7. Análise de erros: amostras Ruim classificadas como Ótimo (top 5 realizações)
     print(f"\n{'='*60}")
-    print("  ANÁLISE DE ERROS — Amostras 'Ruim' classificadas como 'Ótimo'")
+    print(
+        "  ANÁLISE DE ERROS — Amostras 'Ruim' classificadas como 'Ótimo' (top 5 realizações)"
+    )
     print(f"{'='*60}")
 
     top5_runs = sorted(best_results, key=lambda r: r["acc_test"], reverse=True)[:5]
@@ -1162,7 +1242,7 @@ def main():
         misclass_indices = np.where(mask)[0]
 
         print(
-            f"\n  #{rank} Topologia {run['topo_idx']} Rodada {run_idx} (Acc Teste: {run['acc_test']:.2%})"
+            f"\n  #{rank} Topologia {run['topo_idx']} Realização {run_idx} (Acc Teste: {run['acc_test']:.2%})"
         )
 
         if len(misclass_indices) == 0:
@@ -1175,7 +1255,7 @@ def main():
                 print(f"        - Amostra real: {true_raw} → Predita como: {pred_raw}")
                 record = {
                     "topologia": run["topo_idx"],
-                    "rodada": run_idx,
+                    "realização": run_idx,
                     "acc_teste": f"{run['acc_test']:.2%}",
                     "amostra_real_raw": true_raw,
                     "pred_raw": pred_raw,
@@ -1195,7 +1275,7 @@ def main():
         misclass_df.to_csv(misclass_csv, index=False, encoding="utf-8-sig")
         print(f"\n   📄 Detalhes salvos em: {misclass_csv}")
     else:
-        print("\n   ✅ Nenhum erro Ruim→Ótimo encontrado nas top 5 rodadas.")
+        print("\n   ✅ Nenhum erro Ruim→Ótimo encontrado nas top 5 realizações.")
 
     print("\n✅ Busca de topologias concluída com sucesso!")
 

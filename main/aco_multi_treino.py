@@ -28,12 +28,12 @@ SAVE_DIR = "src/acoPictures/multi"  # diretório para salvar gráficos
 EXPERIMENT_DIR = "src/experiments/multi"  # diretório para salvar experimentos
 
 # ── Ranges para busca de topologia ─────────────────────────────────
-GRID_M_VALUES = [5]  # linhas do grid SOM
-GRID_N_VALUES = [5]  # colunas do grid SOM
+GRID_M_VALUES = [5, 7, 9]  # linhas do grid SOM
+GRID_N_VALUES = [5, 7, 9]  # colunas do grid SOM
 LR_VALUES = [0.2, 0.3, 0.4, 0.5]  # taxa de aprendizado inicial
 SIGMA_VALUES = [3, 5, 7, 9]  # raio de vizinhança inicial
-NUM_RUNS_PER_TOPO = 3  # treinos independentes por topologia
-MAX_TOTAL_RUNS = 12  # limite máximo de treinos no total
+NUM_RUNS_PER_TOPO = 5  # treinos independentes por topologia
+MAX_TOTAL_RUNS = 100  # limite máximo de treinos no total
 
 
 def generate_topologies():
@@ -219,7 +219,9 @@ def plot_accuracy_comparison(
         # A janela é o número de treinos por topologia para suavizar dentro de cada bloco.
         window_size = max(2, len(list(topo_indices.values())[0]))
 
-        train_ma = pd.Series(acc_trains).rolling(window=window_size, min_periods=1).mean()
+        train_ma = (
+            pd.Series(acc_trains).rolling(window=window_size, min_periods=1).mean()
+        )
         test_ma = pd.Series(acc_tests).rolling(window=window_size, min_periods=1).mean()
 
         # Amostrar o valor da média móvel no último treino de cada topologia
@@ -294,7 +296,9 @@ def plot_accuracy_comparison(
         ax.set_xticks(x_topo)
         rotation_angle = 90 if num_topos > 15 else (45 if num_topos > 8 else 0)
         ha_align = "center" if rotation_angle == 0 else "right"
-        ax.set_xticklabels(topo_labels, rotation=rotation_angle, ha=ha_align, fontsize=9)
+        ax.set_xticklabels(
+            topo_labels, rotation=rotation_angle, ha=ha_align, fontsize=9
+        )
 
     else:
         # Se for apenas 1 topologia (ex: best_results), mostramos os valores reais de cada treino
